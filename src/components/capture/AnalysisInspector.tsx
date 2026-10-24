@@ -510,7 +510,7 @@ hit = ray.intersectPlane(floorPlane)`}
         </div>
 
         <div className="bg-surface-50 border-t border-surface-200 px-6 py-3.5 flex justify-between items-center text-xs text-surface-500">
-          <span>Project: Morrow Room Studio · Course: ICG Lab</span>
+          <span>Project: AuraSpace Studio · Course: ICG Lab</span>
           <button className="btn-secondary text-xs py-1.5 px-4" onClick={onClose}>
             Close Inspector
           </button>

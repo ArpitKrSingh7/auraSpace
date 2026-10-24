@@ -169,10 +169,10 @@ export function validateSettings(input: unknown): Settings {
 export function parseProjectJson(json: string): Project {
   if (typeof json !== 'string' || new TextEncoder().encode(json).length > MAX_IMPORT_BYTES) throw new ValidationError('Project files must be smaller than 24 MB.');
   let parsed: unknown;
-  try { parsed = JSON.parse(json); } catch { throw new ValidationError('This file is not valid JSON. Choose a Morrow project export.'); }
+  try { parsed = JSON.parse(json); } catch { throw new ValidationError('This file is not valid JSON. Choose an AuraSpace project export.'); }
   const source = record(parsed, 'Project file');
   if (source.format !== undefined) {
-    if (source.format !== 'morrow-project' || source.version !== 1) throw new ValidationError('This project export version is not supported.');
+    if ((source.format !== 'auraspace-project' && source.format !== 'morrow-project') || source.version !== 1) throw new ValidationError('This project export version is not supported.');
     return validateProject(source.project);
   }
   return validateProject(source);
@@ -189,7 +189,7 @@ export function exportProjectJson(project: Project): string {
     ? { ...item, photoId: undefined, detectionId: undefined } : item;
   const portable = validateProject({ ...project, photos: portablePhotos, items: project.items.map(cleanItem), layouts: project.layouts.map((layout) => ({ ...layout, items: layout.items.map(cleanItem) })) });
   return JSON.stringify({
-    format: 'morrow-project', version: 1, exportedAt: new Date().toISOString(),
+    format: 'auraspace-project', version: 1, exportedAt: new Date().toISOString(),
     omittedMediaCount: project.photos.length - portablePhotos.length,
     mediaNote: 'Embedded photos travel with this file. Device-local, temporary, and remote-only images are omitted; your layout and furniture remain editable.',
     project: portable,

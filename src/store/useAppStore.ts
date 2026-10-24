@@ -153,12 +153,12 @@ export interface AppState {
   initSamples: () => void;
 }
 
-const STORAGE_KEY = 'morrow-room-studio';
+const STORAGE_KEY = 'auraspace-studio';
 
 function getStoredState(): { projects?: Project[]; settings?: Settings } {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('morrow-room-studio');
     if (!raw) return {};
     return JSON.parse(raw);
   } catch {

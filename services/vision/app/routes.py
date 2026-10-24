@@ -235,7 +235,7 @@ async def compute_depth(req: DepthRequest) -> DepthResponse:
 async def health_check() -> dict[str, Any]:
     return {
         "status": "ok",
-        "service": "morrow-vision-service",
+        "service": "auraspace-vision-service",
         "models": {
             "mask_rcnn_loaded": is_model_loaded(),
             "depth_model_loaded": is_depth_model_loaded(),

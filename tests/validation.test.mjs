@@ -41,7 +41,7 @@ test('Project JSON round-trip export and import', () => {
   project.items.push(makeItem('chair', { x: 4, z: 1, placed: true }));
 
   const jsonString = exportProjectJson(project);
-  assert.ok(jsonString.includes('morrow-project'));
+  assert.ok(jsonString.includes('auraspace-project'));
   assert.ok(jsonString.includes('Studio Apartment'));
 
   const parsed = parseProjectJson(jsonString);

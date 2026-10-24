@@ -1,5 +1,5 @@
 """
-Morrow Room Studio — Vision Service
+AuraSpace — Vision Service
 ====================================
 AI-powered room layout analysis and furniture visualization backend.
 

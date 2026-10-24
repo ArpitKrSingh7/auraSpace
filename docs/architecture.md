@@ -1,7 +1,7 @@
 # System Architecture & Technical Specifications
 
 ## 1. Overview
-Morrow Room Studio is a client-server spatial layout and furniture visualization tool.
+AuraSpace is a client-server spatial layout and furniture visualization tool.
 It bridges 2D digital image observations with a continuous 3D parametric scene graph.
 
 ## 2. Coordinate System Standards

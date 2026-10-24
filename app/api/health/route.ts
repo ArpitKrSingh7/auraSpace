@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   return NextResponse.json({
     status: 'ok',
-    app: 'Morrow Room Studio',
+    app: 'AuraSpace',
     version: '1.0.0',
     capabilities: {
       imageProcessing: true,

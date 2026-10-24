@@ -2,12 +2,12 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Morrow Room Studio',
+  title: 'AuraSpace — Intelligent Room Layout & Furniture Visualization',
   description: 'Design your space before you move a thing. An intelligent 2D/3D room layout and furniture visualization tool.',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Morrow',
+    title: 'AuraSpace',
   },
 };
 

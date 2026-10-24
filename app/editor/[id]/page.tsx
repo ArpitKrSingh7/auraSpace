@@ -381,7 +381,7 @@ function ExportDialog({ onClose }: { onClose: () => void }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${project.name.replace(/[^a-zA-Z0-9]/g, '-')}.morrow.json`;
+    a.download = `${project.name.replace(/[^a-zA-Z0-9]/g, '-')}.auraspace.json`;
     a.click();
     URL.revokeObjectURL(url);
   };

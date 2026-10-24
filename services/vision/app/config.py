@@ -1,5 +1,5 @@
 """
-Configuration — Morrow Room Studio Vision Service
+Configuration — AuraSpace Vision Service
 ===================================================
 Centralised configuration for model paths, device selection, and tuning knobs.
 

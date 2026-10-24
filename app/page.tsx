@@ -249,8 +249,8 @@ export default function HomePage() {
                 <Box className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-xl font-bold">Morrow Room Studio</h1>
-                <p className="text-xs text-white/70">Intelligent Room Design</p>
+                <h1 className="text-xl font-bold">AuraSpace</h1>
+                <p className="text-xs text-white/70">Intelligent 2D/3D Room Studio</p>
               </div>
             </div>
             <button

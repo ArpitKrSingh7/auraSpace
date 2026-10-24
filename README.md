@@ -1,4 +1,4 @@
-# Morrow Room Studio 🛋️
+# AuraSpace 🛋️
 ### Intelligent 2D/3D Room Layout & Furniture Visualization Tool
 
 [![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](https://nextjs.org/)
@@ -7,7 +7,7 @@
 [![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-COCO--SSD-FF6F00?logo=tensorflow)](https://www.tensorflow.org/js)
 [![Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel)](https://vercel.com/)
 
-**Morrow Room Studio** is an enterprise-grade spatial planning and furniture visualization web and mobile application. It seamlessly integrates **Image Processing (IP)**, **Computer Vision (CV)**, and **Computer Graphics (CG)** into an intuitive user workflow:
+**AuraSpace** is an enterprise-grade spatial planning and furniture visualization web and mobile application. It seamlessly integrates **Image Processing (IP)**, **Computer Vision (CV)**, and **Computer Graphics (CG)** into an intuitive user workflow:
 
 1. **Capture or Upload:** Users take or upload photographs of their room (furnished or empty).
 2. **AI Furniture Extraction:** Deep learning models identify furniture items and segment their boundaries.
@@ -192,4 +192,4 @@ icgProject/
    - **Tab 2 (CV):** Inspect bounding boxes, class scores, and monocular depth cues.
    - **Tab 3 (CG):** View Separating Axis Theorem mathematical formulations and camera projection matrices.
 7. **Custom Proxies:** Open the bottom tray and tap **Add Custom Object** to specify custom width, depth, height, and color for uncataloged furniture.
-8. **Export:** Click the **Download** icon to export a portable `.morrow.json` project file.
+8. **Export:** Click the **Download** icon to export a portable `.auraspace.json` project file.
