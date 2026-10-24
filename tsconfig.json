@@ -24,7 +24,7 @@
       "@/store/*": ["./src/store/*"],
       "@/hooks/*": ["./src/hooks/*"]
     },
-    "baseUrl": "."
+    
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules", "services/vision"]
