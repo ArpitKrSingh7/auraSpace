@@ -1,46 +1,116 @@
-# AuraSpace 🛋️
-### Intelligent 2D/3D Room Layout & Furniture Visualization Tool
+<div align="center">
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/auraspace)
-[![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](https://nextjs.org/)
-[![Three.js](https://img.shields.io/badge/Three.js-WebGL-black?logo=three.js)](https://threejs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-COCO--SSD-FF6F00?logo=tensorflow)](https://www.tensorflow.org/js)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+# 🛋️ AuraSpace
 
-**AuraSpace** is an enterprise-grade spatial planning and furniture visualization web and mobile application. It seamlessly integrates **Image Processing (IP)**, **Computer Vision (CV)**, and **Computer Graphics (CG)** into an intuitive user workflow:
+### **Intelligent 2D/3D Room Layout & Furniture Visualization Studio**
+*Bridging Real-World Photographs to Interactive, Collision-Aware 3D Digital Twins via Client-Side AI*
 
-1. **Capture or Upload:** Users take or upload photographs of their room (furnished or empty) — or click preset samples.
-2. **AI Furniture Extraction:** Deep learning models identify furniture items and segment their boundaries.
-3. **Removal & Inpainting:** Detected furniture is erased from the photograph, synthesizing an approximate clean empty-room preview with an interactive split comparison slider.
-4. **Sliding Furniture Tray:** Extracted furniture items are placed into a collapsible bottom sliding tray with estimated physical dimensions.
-5. **Procedural 2D & 3D Reconstruction:** A near-similar procedural room model is generated instantly with exact floor boundaries and door cutaways.
-6. **Arrangement & Walkthrough:** Users drag, rotate, and position furniture from the tray. An eye-level **Inside Mode** allows users to walk around the room and evaluate sightlines before moving physical items.
-7. **Custom Objects:** For unsupported or unidentifiable items, users can add dimensioned custom proxy boxes.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ArpitKrSingh7/auraSpace)
+
+[![Next.js 14](https://img.shields.io/badge/Next.js-14.2-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![Three.js](https://img.shields.io/badge/Three.js-WebGL-000000?style=for-the-badge&logo=three.js&logoColor=white)](https://threejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-COCO--SSD-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)](https://www.tensorflow.org/js)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.11-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-2EA44F?style=for-the-badge)](https://opensource.org/licenses/MIT)
+
+[✨ Features](#-key-features) • [🚀 Quickstart](#-quickstart-guide) • [⚡ 1-Click Deploy](#-one-click-deployment-vercel) • [🔬 Academic Matrix](#-academic-tri-pillar-matrix) • [📐 Architecture](#-system-architecture) • [🧪 Testing](#-automated-testing)
 
 ---
 
-## ⚡ Can I Deploy This on Vercel with Just One Click?
+</div>
 
-**YES, ABSOLUTELY! 🚀**
+## 🌟 Overview
 
-AuraSpace is engineered from the ground up for **100% zero-configuration 1-click deployment on Vercel**:
+**AuraSpace** is a modern spatial planning and procedural visualization platform that enables users to design, remodel, and arrange living spaces before moving a single physical object. 
 
-### Why It Works Out of the Box on Vercel:
-1. **Built on Next.js 14 App Router:** Vercel natively detects and optimizes Next.js builds.
-2. **Zero-GPU Serverless Architecture:** The primary deep learning computer vision model (`@tensorflow/tfjs` + `coco-ssd`) and the image processing pipeline (Sobel gradients, CLAHE, inpainting) **execute directly in the user's browser client via WebGL & HTML5 Canvas**.
-3. **No Expensive GPU Server Required:** You do **not** need to deploy or pay for a separate Python GPU backend server just to test or demonstrate the app. Everything runs on Vercel's standard free tier.
-4. **Serverless API Routes:** Backend routes in `app/api/` (`/api/health`, `/api/vision/analyze`, etc.) run automatically as lightweight Vercel Serverless Functions.
+By unifying **Image Processing (IP)**, **Computer Vision (CV)**, and **Computer Graphics (CG)** into a cohesive, zero-friction web and mobile workflow, AuraSpace eliminates the barrier between 2D photograph ingestion and real-time 3D interactive spatial simulation.
 
-### 1-Click Deployment Steps:
-1. Push this code to your GitHub account:
+```mermaid
+flowchart LR
+    A["📸 2D Photo Capture / Preset Sample"] --> B["🧠 Deep CV Detection (TensorFlow.js / Mask R-CNN)"]
+    B --> C["🎨 Contextual Surface Inpainting (Telea / PDEs)"]
+    C --> D["🗄️ Sliding Inventory Staging Tray"]
+    D --> E["📐 Procedural 3D Scene Graph (Three.js WebGL)"]
+    E --> F["💥 Real-Time Rotated Collision Engine (SAT OBB)"]
+    F --> G["👀 First-Person Walkthrough (Inside Mode)"]
+```
+
+---
+
+## ✨ Key Features
+
+<table>
+  <tr>
+    <td width="50%">
+      <h3>📸 Photo Ingestion & Preset Samples</h3>
+      Upload room photos directly or test immediately with built-in <b>1-Click Sample Presets</b> (Living Room & Bedroom) without needing files on disk. Client-side EXIF normalization and preprocessing run instantaneously.
+    </td>
+    <td width="50%">
+      <h3>🧠 AI Furniture Extraction</h3>
+      Integrated deep learning models detect couches, chairs, tables, beds, and decorative fixtures with confidence probabilities. Extracted items are instantly cataloged with estimated physical dimensions.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>🎨 Surface Inpainting & Split Slider</h3>
+      Applies contextual multi-directional interpolation and Partial Differential Equation (PDE) inpainting to erase furniture from photographs. Compare original vs. synthesized empty-room views with an <b>interactive split slider</b>.
+    </td>
+    <td width="50%">
+      <h3>🗄️ Sliding Furniture Inventory Tray</h3>
+      A thumb-friendly mobile sliding sheet houses catalog items and unplaced furniture extracted from photos. Drag, stage, and return items to the tray with real-time room occupancy metrics.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>🎮 Tri-Mode 2D/3D Rendering Engine</h3>
+      <ul>
+        <li><b>Inside View:</b> Eye-level walkthrough camera ($Y = 1.55\text{m}$, $68^\circ$ FOV) with boundary-checked tap-to-walk.</li>
+        <li><b>Overview Mode:</b> Free 3D orbit with automatic front-wall cutaway rendering.</li>
+        <li><b>Plan Mode:</b> Top-down orthographic CAD projection with millimeter scale grid.</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>💥 Rotated Collision Engine (SAT)</h3>
+      Real-time <b>Separating Axis Theorem (SAT)</b> collision evaluation for arbitrary yaw angles ($\theta$). Instant visual warnings trigger when furniture items intersect walls or each other.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>📦 Custom Proxy Objects</h3>
+      Add user-defined dimensioned 3D proxy boxes for unsupported or oversized physical items (pianos, shelving, gym equipment) with custom hex paint colors and full physics verification.
+    </td>
+    <td width="50%">
+      <h3>🔬 Live Academic Lab & Theory Inspector</h3>
+      An in-app laboratory inspecting live mathematical formulas: ITU-R BT.601 Grayscale, Sobel gradient magnitudes, CLAHE histograms, depth recovery, and an <b>interactive Bresenham integer line rasterizer</b>.
+    </td>
+  </tr>
+</table>
+
+---
+
+## ⚡ One-Click Deployment (Vercel)
+
+AuraSpace is engineered for **100% zero-configuration 1-click deployment on Vercel**:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ArpitKrSingh7/auraSpace)
+
+### Why It Works Out of the Box:
+- **Zero-GPU Serverless Architecture:** The primary deep learning computer vision model (`@tensorflow/tfjs` + `coco-ssd`) and the image processing pipeline (Sobel gradients, CLAHE, inpainting) **execute directly in the user's browser client via WebGL & HTML5 Canvas**.
+- **No Heavy GPU Server Required:** You do **not** need to deploy or pay for a separate Python GPU backend server just to test or demonstrate the app. Everything runs on Vercel's standard free tier.
+- **Serverless API Routes:** Backend routes in `app/api/` (`/api/health`, `/api/vision/analyze`, etc.) run automatically as lightweight Vercel Serverless Functions.
+
+### Manual Vercel Deployment Steps:
+1. Push this repository to your GitHub account:
    ```bash
-   git remote add origin https://github.com/<your-username>/auraspace.git
+   git remote add origin https://github.com/ArpitKrSingh7/auraSpace.git
    git branch -M main
    git push -u origin main
    ```
-2. Go to [vercel.com/new](https://vercel.com/new) and import your `auraspace` repository.
-3. Leave all build settings at their defaults:
+2. Go to [vercel.com/new](https://vercel.com/new) and import your `auraSpace` repository.
+3. Keep default settings:
    - **Framework Preset:** `Next.js`
    - **Build Command:** `next build`
    - **Output Directory:** `.next`
@@ -48,208 +118,261 @@ AuraSpace is engineered from the ground up for **100% zero-configuration 1-click
 
 ---
 
-## 📖 Comprehensive Feature Run Guide (How to Use All Features)
+## 🚀 Quickstart Guide
 
-Follow this guide to test and demonstrate every single capability of AuraSpace:
+### Prerequisites
+- **Node.js:** `v18.17+` or `v20+`
+- **Package Manager:** `pnpm` (recommended), `npm`, or `yarn`
 
-### 1. Room Creation & Dimensions
-- **Preset Rooms:** On the home screen, click **Sunday Living** (5.2 × 4.2m) or **Bedroom** (4.3 × 4.5m) to open pre-arranged rooms.
-- **Custom Room:** Click **+ New Room** on the home screen, specify Room Name, Width (m), Depth (m), and Height (m), and click **Create Room**.
-- **Adjust Dimensions in Editor:** Click the ⚙️ **Settings** icon in the editor toolbar to change wall length, depth, ceiling height, and floor/wall paint colors dynamically.
+### 1. Installation
+```bash
+# Clone the repository
+git clone https://github.com/ArpitKrSingh7/auraSpace.git
+cd auraSpace
 
-### 2. Photo Upload & Instant Preset Samples
-- Click the 📷 **Camera** icon in the editor top toolbar.
-- **Option A (Instant 1-Click Demo):** Click either **🛋️ Living Room Sample** or **🛏️ Bedroom Sample**. The app instantly generates a room image with furniture, triggers detection, and shows results without needing any files on disk.
-- **Option B (Your Own Photo):** Drag & drop any `.jpg`, `.png`, or `.webp` room picture (or tap to open your mobile camera).
+# Install dependencies
+pnpm install
+```
 
-### 3. AI Furniture Extraction
-- Once a photo is analyzed, detected furniture items appear in the modal with confidence percentages (e.g., `couch 94%`, `chair 88%`, `table 82%`).
-- Click **+ Add** on any detection to immediately transfer that physical item into your room layout.
+### 2. Run Local Development Server
+```bash
+pnpm dev
+```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser. (LAN access is automatically configured for mobile testing over Wi-Fi).
 
-### 4. Furniture Removal & Inpainting Preview (Interactive Split Slider)
-- In the photo modal, click **✨ Open in Academic Lab** (or click the ✨ button in the top toolbar).
-- Select **Tab 1: Image Processing**.
-- Click **Furniture Removal**.
-- The app applies directional surface interpolation and Telea/Navier-Stokes PDEs to erase the furniture from the photo.
-- **Drag the center split slider ↔ left and right** to compare the original furnished photo against the synthesized empty room!
+### 3. Build for Production
+```bash
+pnpm run build
+pnpm start
+```
 
-### 5. Sliding Furniture Inventory Tray
-- The bottom sliding sheet houses your furniture inventory.
-- **In Tray Section:** Shows unplaced items extracted from photos. Tap any card to drop it into the room.
-- **Catalog Section:** Tap any standard item (Sofa, Chair, Bed, Coffee Table, Sideboard, Plant, Rug) to place it.
-- **Swipe / Drag Handle:** Swipe the bottom handle up to view all items, or down to minimize the tray while arranging furniture.
+---
 
-### 6. 3D & 2D Camera Navigation Modes
-Switch modes using the tabs in the top toolbar or press keyboard shortcuts (`1`, `2`, `3`):
-- **👀 Inside Mode (Walkthrough):**
+## 📖 Feature Walkthrough & Verification
+
+Follow this walkthrough to experience and demonstrate every capability of AuraSpace:
+
+### 1. Room Creation & Dimension Tuning
+- **Preset Rooms:** On the home screen, click **Sunday Living** (5.2 × 4.2m) or **Bedroom** (4.3 × 4.5m) to load pre-arranged spaces.
+- **Custom Room:** Click **+ New Room**, define room dimensions (Width, Depth, Ceiling Height), and click **Create Room**.
+- **Live Dimension Updates:** Click the ⚙️ **Settings** button in the editor toolbar to alter wall lengths, height, and wall/floor paint colors in real time.
+
+### 2. 1-Click Preset Photo Detection
+- Click the 📷 **Camera** icon in the editor toolbar.
+- Click either **🛋️ Living Room Sample** or **🛏️ Bedroom Sample**.
+- The system generates synthetic room imagery, executes deep vision inference, and highlights furniture detections with confidence scores (e.g., `couch 94%`, `chair 88%`).
+- Tap **+ Add** on any detected item to immediately stage it in your 3D layout!
+
+### 3. Surface Inpainting Split Slider
+- In the photo modal or top toolbar, click **✨ Open in Academic Lab**.
+- Switch to **Image Processing** and select **Furniture Removal**.
+- The canvas applies directional surface interpolation and Telea/Navier-Stokes PDEs to synthesize an empty room.
+- **Drag the split slider ↔ left and right** to compare the furnished room against the synthesized empty room!
+
+### 4. 3D Camera Modes
+Switch modes using the toolbar buttons or keyboard shortcuts:
+- **`1` — Inside View (First-Person Walkthrough):**
   - Places an eye-level perspective camera ($Y = 1.55\text{m}$, $68^\circ$ FOV) inside the room.
-  - **Tap anywhere on the floor** to walk smoothly to that location. The camera path checks boundaries so you never walk through walls.
-- **🔄 Overview Mode (3D Orbit):**
-  - Left-click and drag (or single-finger drag on mobile) to orbit around the room in 3D.
-  - Scroll wheel (or pinch-to-zoom) to zoom in and out.
-  - The front wall automatically drops to cutaway height so interior furniture remains visible.
-- **📐 Plan Mode (2D Orthographic):**
-  - Top-down parallel CAD projection with high-contrast scale grid lines for millimeter-level layout precision.
+  - **Tap/click anywhere on the floor** to walk smoothly to that location with boundary-checked collision avoidance.
+- **`2` — Overview Mode (3D Orbit):**
+  - Orbit around the room with left-click drag / single-finger drag.
+  - Front-facing walls automatically lower to cutaway height so interior contents are never obscured.
+- **`3` — Plan Mode (2D Orthographic CAD):**
+  - High-precision top-down parallel projection with millimeter grid lines and dimension callouts.
 
-### 7. Real-Time Rotated Collision Detection (Separating Axis Theorem / SAT)
-- Select any placed furniture item by clicking/tapping on it.
-- Drag it so it intersects another item (e.g. push a chair into the sofa) or extends past the room walls.
-- An **amber warning badge** immediately appears: *"Overlaps Linen sofa"* or *"Extends beyond the room boundary"*.
-- Rotate the item $45^\circ$ or $90^\circ$ using the inspector buttons. The collision engine computes exact Oriented Bounding Box (OBB) projections for arbitrary yaw angles $\theta$.
-- Note: Rugs are categorized as floor coverings and do not trigger false collision alarms.
+### 5. Rotated Collision Engine (SAT)
+- Drag any furniture item so it intersects another item (e.g., pushing a chair into a sofa) or extends past the room walls.
+- An **amber warning badge** immediately displays: *"Overlaps Linen sofa"* or *"Extends beyond the room boundary"*.
+- Rotate the object $45^\circ$ or $90^\circ$ (`R` key or inspector buttons). The engine computes exact Oriented Bounding Box (OBB) projections on arbitrary axes.
+- *Note:* Area rugs are classified as floor coverings and do not trigger false collision warnings.
 
-### 8. Custom Proxy Objects (For Unusual / Unsupported Items)
-- Open the bottom tray and tap **+ Add Custom Object**.
-- Enter an object name (e.g., *"Grand Piano"* or *"Floor Bookshelf"*), set custom Width, Depth, Height, and pick a custom hex color.
-- Tap **Add to Room**. The object is generated as a dimensioned 3D proxy box with full SAT collision and clearance checking.
+### 6. Academic Lab & Theory Inspector (✨ Button)
+Click the ✨ icon in the top toolbar to access the live educational lab:
+- **Image Processing (IP):** Inspect Grayscale (BT.601), Contrast Stretch, Sobel/Canny gradient magnitudes ($|\nabla I|$), CLAHE, and inpainting.
+- **Computer Vision (CV):** View bounding boxes, confidence logits, class classifications, and monocular depth recovery formulas ($Z = f \cdot \frac{B}{d}$).
+- **Computer Graphics (CG):** View SAT formulas, ray-plane intersection math, and interact with the **Live Bresenham Integer Line Rasterizer** on a discrete pixel grid.
 
-### 9. Academic Lab & Theory Inspector (✨ Toolbar Button)
-Click the **✨** button in the top toolbar to open the full academic lab showing live proof for all 3 course components:
-- **Tab 1 — Image Processing (IP):**
-  - **Grayscale:** ITU-R BT.601 conversion ($Y = 0.299R + 0.587G + 0.114B$).
-  - **Contrast Stretch:** Dynamic range histogram stretching.
-  - **Sobel / Canny Edges:** Computes gradient magnitude $|\nabla I| = \sqrt{G_x^2 + G_y^2}$.
-  - **CLAHE:** Contrast Limited Adaptive Histogram Equalization.
-  - **Furniture Removal:** Empty room inpainting.
-- **Tab 2 — Computer Vision (CV):**
-  - Displays bounding boxes, confidence logits, class classifications, and monocular depth recovery formulas ($Z = f \cdot \frac{B}{d}$).
-- **Tab 3 — Computer Graphics (CG):**
-  - Formulations for Separating Axis Theorem (SAT), Ray-Plane intersection, and camera projection matrices.
-  - **Interactive Bresenham Integer Line Rasterizer Widget:** Click any cell on the discrete pixel grid or click *Randomize Endpoints* to see Bresenham's integer decision variable ($e_2$) plot lines in real time!
+---
 
-### 10. Undo, Redo & Local Storage Persistence
-- Make any change (move item, rotate, delete).
-- Click **Undo** (or `Ctrl+Z` / `Cmd+Z`) and **Redo** (or `Ctrl+Shift+Z`) in the top toolbar.
-- Refresh your browser or close the tab. When you return, all rooms, dimensions, and furniture layouts are restored from `localStorage`.
+## 🎓 Academic Tri-Pillar Matrix
 
-### 11. Project Export (.auraspace.json)
-- Click the 📥 **Download** icon in the toolbar.
-- Click **Project File (.json)**.
-- A portable `.auraspace.json` file is downloaded containing the full room geometry, photo references, and furniture coordinates. You can share this file with other users.
+AuraSpace is built specifically to demonstrate the mathematical synergy between all three core visual computing disciplines:
 
-### 12. Running Automated Unit Tests
-Verify mathematical correctness from your terminal:
+```
+                       ┌─────────────────────────┐
+                       │   Visual Computing      │
+                       │       AuraSpace         │
+                       └────────────┬────────────┘
+         ┌──────────────────────────┼──────────────────────────┐
+         ▼                          ▼                          ▼
+┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+│ Image Processing │       │  Computer Vision │       │Computer Graphics │
+│   Pixels & PDEs  │       │ Semantic Shapes  │       │  3D Scene & SAT  │
+└──────────────────┘       └──────────────────┘       └──────────────────┘
+```
+
+### 1. Image Processing (IP)
+| Concept | Mathematical Formulation | Source Implementation |
+|---|---|---|
+| **Luminance Normalization** | $Y = 0.299R + 0.587G + 0.114B$ (ITU-R BT.601 standard) | [`src/services/vision-core.ts`](file:///home/arpit/icg/icgProject/src/services/vision-core.ts) |
+| **Spatial Gradient Convolution** | $G_x = K_x * I, \quad G_y = K_y * I, \quad \|\nabla I\| = \sqrt{G_x^2 + G_y^2}$ | [`src/services/vision-core.ts`](file:///home/arpit/icg/icgProject/src/services/vision-core.ts) |
+| **Adaptive Contrast (CLAHE)** | $P_{clip}(k) = \min(P(k), \tau) + \frac{N_{clipped}}{K}$ | [`services/vision/app/preprocessing.py`](file:///home/arpit/icg/icgProject/services/vision/app/preprocessing.py) |
+| **Mathematical Morphology** | $A \oplus B = \bigcup_{b \in B} A_b, \quad A \ominus B = \bigcap_{b \in B} A_{-b}$ | [`services/vision/app/preprocessing.py`](file:///home/arpit/icg/icgProject/services/vision/app/preprocessing.py) |
+| **Surface Inpainting** | $\Delta I = \nabla^2 I = \frac{\partial^2 I}{\partial x^2} + \frac{\partial^2 I}{\partial y^2} = 0$ (Telea / Navier-Stokes) | [`src/services/vision-core.ts`](file:///home/arpit/icg/icgProject/src/services/vision-core.ts) |
+
+### 2. Computer Vision (CV)
+| Concept | Mathematical Formulation | Source Implementation |
+|---|---|---|
+| **Object Detection & Classification** | $\hat{y} = \operatorname{softmax}(W_c f(x) + b_c), \quad \hat{b} = \operatorname{reg}(f(x))$ | [`src/services/vision.web.ts`](file:///home/arpit/icg/icgProject/src/services/vision.web.ts) |
+| **Non-Maximum Suppression (NMS)** | $\operatorname{IoU}(B_1, B_2) = \frac{\operatorname{area}(B_1 \cap B_2)}{\operatorname{area}(B_1 \cup B_2)} \le \theta_{IoU}$ | [`services/vision/app/inference.py`](file:///home/arpit/icg/icgProject/services/vision/app/inference.py) |
+| **Monocular Depth Recovery** | $Z = f \cdot \frac{B}{d}$ (Triangulation with focal length & baseline) | [`services/vision/app/depth.py`](file:///home/arpit/icg/icgProject/services/vision/app/depth.py) |
+| **Perspective Vanishing Geometry** | $\mathbf{v} = \mathbf{l}_1 \times \mathbf{l}_2$ via Hough Transform line intersections | [`services/vision/app/room_analysis.py`](file:///home/arpit/icg/icgProject/services/vision/app/room_analysis.py) |
+
+### 3. Computer Graphics (CG)
+| Concept | Mathematical Formulation | Source Implementation |
+|---|---|---|
+| **Separating Axis Theorem (SAT)** | $\min(A \cdot \mathbf{u}) > \max(B \cdot \mathbf{u}) \implies \text{Separating Axis Found}$ | [`src/domain/geometry.ts`](file:///home/arpit/icg/icgProject/src/domain/geometry.ts) |
+| **Rotated OBB Axes** | $\mathbf{u}_1 = (\cos\theta, \sin\theta), \quad \mathbf{u}_2 = (-\sin\theta, \cos\theta)$ | [`src/domain/geometry.ts`](file:///home/arpit/icg/icgProject/src/domain/geometry.ts) |
+| **Ray-Plane Touch Picking** | $\mathbf{P} = \mathbf{O} + t \mathbf{D}, \quad t = \frac{(\mathbf{P}_0 - \mathbf{O}) \cdot \mathbf{n}}{\mathbf{D} \cdot \mathbf{n}}$ with $Y=0$ floor plane | [`src/components/scene/SceneCanvas.tsx`](file:///home/arpit/icg/icgProject/src/components/scene/SceneCanvas.tsx) |
+| **Bresenham's Integer Line Rasterization** | $e_{i+1} = e_i + 2\Delta y - 2\Delta x [e_i \ge 0]$ (Zero floating-point ops) | [`src/components/capture/AnalysisInspector.tsx`](file:///home/arpit/icg/icgProject/src/components/capture/AnalysisInspector.tsx) |
+| **Perspective Projection Matrix** | $\mathbf{P} = \begin{bmatrix} \frac{1}{\tan(FOV/2) \cdot a} & 0 & 0 & 0 \\ 0 & \frac{1}{\tan(FOV/2)} & 0 & 0 \\ 0 & 0 & -\frac{f+n}{f-n} & -\frac{2fn}{f-n} \\ 0 & 0 & -1 & 0 \end{bmatrix}$ | [`src/components/scene/SceneWorld.tsx`](file:///home/arpit/icg/icgProject/src/components/scene/SceneWorld.tsx) |
+
+---
+
+## ⌨️ Keyboard Shortcuts
+
+| Shortcut | Description |
+|---|---|
+| <kbd>1</kbd> | Switch to **Inside Mode** (First-Person Walkthrough) |
+| <kbd>2</kbd> | Switch to **Overview Mode** (3D Orbit) |
+| <kbd>3</kbd> | Switch to **Plan Mode** (2D Orthographic CAD) |
+| <kbd>R</kbd> | Rotate selected item by $45^\circ$ |
+| <kbd>Delete</kbd> / <kbd>Backspace</kbd> | Return selected item to inventory tray |
+| <kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Cmd</kbd> + <kbd>Z</kbd> | **Undo** last modification |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> | **Redo** last modification |
+| <kbd>Escape</kbd> | Deselect active item / close modal dialogs |
+
+---
+
+## 🧪 Automated Testing
+
+AuraSpace includes an automated test suite verifying mathematical correctness for spatial algorithms:
+
 ```bash
 pnpm test
 ```
-Runs 7 test cases validating Separating Axis Theorem (SAT) collision math, rotated bounding boxes, room containment, and door sweep clearance.
 
-### 13. (Optional) Running the Python FastAPI Backend & Benchmark Suite
-For local GPU/CPU model evaluation:
+### Verified Test Cases:
+- ✔️ **Separating Axis Theorem (SAT):** Exact intersection detection between non-axis-aligned oriented bounding boxes.
+- ✔️ **Rotated Bounding Box Corners:** Correct trigonometric corner projection at arbitrary $\theta$ rotations.
+- ✔️ **Room Boundary Containment:** Bounds checks ensuring furniture models do not penetrate outer walls.
+- ✔️ **Door Sweep Clearance:** Verification that items cannot be placed within the circular clearance arc of opening doors.
+- ✔️ **Project Import / Export:** Schema roundtrip serialization and sanitization tests.
+
+---
+
+## 🐍 Optional Python Vision Backend & Benchmark Suite
+
+While AuraSpace runs 100% standalone in the browser, an enterprise **FastAPI + PyTorch** backend service is provided in `services/vision/` for offline model fine-tuning, server GPU inference, and academic evaluation benchmarks:
+
 ```bash
-# 1. Start the Python FastAPI backend
+# 1. Setup Python virtual environment
 cd services/vision
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# Interactive Swagger docs: http://localhost:8000/docs
 
-# 2. Run quantitative benchmarks (mAP@0.5, PSNR, SSIM)
+# 2. Launch FastAPI backend service
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Interactive Swagger Documentation: http://localhost:8000/docs
+
+# 3. Run Quantitative Benchmark Suite (mAP@0.5, PSNR, SSIM, Latency)
 python3 scripts/evaluate.py
 
-# 3. Run Python unit tests
+# 4. Run Python unit tests
 python3 -m unittest discover tests/
 ```
 
 ---
 
-## 🏛️ Academic Course Requirements: Tri-Pillar Architecture
-
-### 1. Image Processing (IP)
-- **Luminance Normalization:** Color space transformation from RGB to grayscale using the human photopic standard ITU-R BT.601:
-  $$Y = 0.299R + 0.587G + 0.114B$$
-- **Spatial Gradient Filtering:** Discrete spatial convolution with dual $3 \times 3$ Sobel masks ($G_x, G_y$) to compute gradient vectors:
-  $$|\nabla I| = \sqrt{G_x^2 + G_y^2}, \quad \theta = \operatorname{atan2}(G_y, G_x)$$
-- **Contrast Enhancement & CLAHE:** Contrast Limited Adaptive Histogram Equalization to handle indoor lighting variations and shadow artifacts.
-- **Morphological Operations:** Dilation, erosion, opening, and closing kernels applied to binary segmentation masks to smooth object boundaries and bridge gaps.
-- **Surface Inpainting & Synthesis:** Context-aware multi-directional border sampling and Navier-Stokes / Telea partial differential equation solvers that fill masked furniture regions to produce empty-room visual previews.
-
-### 2. Computer Vision (CV)
-- **Deep Object Detection & Segmentation:**
-  - Client-side inference powered by `@tensorflow/tfjs` + `@tensorflow-models/coco-ssd` for instant zero-config evaluation in any mobile or desktop browser.
-  - Server-side inference powered by PyTorch `maskrcnn_resnet50_fpn_v2` pre-trained on COCO (classes: `chair`, `couch/sofa`, `bed`, `dining table`, `potted plant`).
-- **Non-Maximum Suppression (NMS):** Overlapping proposal elimination thresholded on Intersection-over-Union (IoU).
-- **Monocular Depth & Scale Estimation:** Recovery of distance along the optical axis ($Z = f \cdot \frac{B}{d}$) combined with horizon and vanishing-point line geometry.
-- **Vanishing Point Geometry:** Multi-line Hough transform clustering used to estimate camera perspective, wall-floor junctions, and floor planes.
-
-### 3. Computer Graphics (CG)
-- **Interactive Three.js Rendering Pipeline:** Full WebGL scene graph featuring directional shadow maps, ambient and hemisphere lighting, and procedural materials.
-- **Dual Synchronized Camera Modes:**
-  - **Inside View (Perspective, $68^\circ$ FOV):** Eye-level walkthrough camera with tap-to-walk collision-safe path evaluation.
-  - **Overview Mode (Perspective, OrbitControls):** Free 3D orbit around the room center with automatic wall cutaway rendering.
-  - **Plan View (Orthographic):** Parallel top-down projection with scale grid lines, dimension metrics, and precise alignment.
-- **Separating Axis Theorem (SAT) Collision Detection:** Exact rotated 2D/3D collision checking for oriented bounding boxes (OBBs) at arbitrary yaw angles $\theta$:
-  $$\mathbf{u} = \begin{bmatrix} -\Delta z / L \\ \Delta x / L \end{bmatrix}$$
-- **Ray-Plane Touch Picking:** Raycasting from viewport coordinates ($NDC \in [-1, 1]$) through the inverse projection-view matrix intersecting the $Y=0$ floor plane for 60 FPS real-time snapping and drag-and-drop.
-- **Procedural Mesh Synthesis:** Algorithmic furniture geometry (multi-cushion sofas, platform beds, sideboards, potted plants) generated dynamically without external heavy 3D assets.
-
----
-
-## 📂 Repository Structure
+## 📐 System Architecture
 
 ```
 auraspace/
 ├── app/
 │   ├── api/
-│   │   ├── health/route.ts           # Health check endpoint
+│   │   ├── health/route.ts             # Health check endpoint
 │   │   └── vision/
-│   │       ├── analyze/route.ts      # CV detection proxy/fallback
-│   │       ├── inpaint/route.ts      # Furniture removal proxy/fallback
-│   │       └── process/route.ts      # Image processing proxy/fallback
-│   ├── editor/[id]/page.tsx          # Main 2D/3D room layout studio
-│   ├── globals.css                   # Tailwind + design tokens
-│   ├── layout.tsx                    # Root HTML layout & fonts
-│   └── page.tsx                      # Home screen & project library
+│   │       ├── analyze/route.ts        # Serverless CV proxy/fallback
+│   │       ├── inpaint/route.ts        # Serverless inpainting proxy
+│   │       └── process/route.ts        # Image processing operations
+│   ├── editor/[id]/page.tsx            # Main 2D/3D studio editor page
+│   ├── globals.css                     # Tailwind tokens & custom variables
+│   ├── layout.tsx                      # Root HTML layout with AuraSpace branding
+│   └── page.tsx                        # Homepage, room manager & sample loader
 ├── src/
 │   ├── components/
 │   │   ├── capture/
-│   │   │   └── AnalysisInspector.tsx # Academic Lab (IP, CV, CG & Bresenham widget)
+│   │   │   ├── AnalysisInspector.tsx   # Academic Lab (IP, CV, CG & Bresenham widget)
+│   │   │   ├── PhotoAnalysis.tsx       # Detection bounding box overlay
+│   │   │   ├── PhotoUpload.tsx         # Preset sample loader & image uploader
+│   │   │   └── ProcessedPreview.tsx    # Split before/after inpainting slider
 │   │   ├── editor/
-│   │   │   ├── FurnitureTray.tsx     # Sliding furniture bottom sheet
-│   │   │   ├── ItemInspector.tsx     # Object dimension & pose editor
-│   │   │   ├── Toolbar.tsx           # Navigation & actions
-│   │   │   └── ViewModeSwitch.tsx    # Inside / Overview / Plan toggle
+│   │   │   ├── FurnitureTray.tsx       # Bottom sliding panel for inventory
+│   │   │   ├── ItemInspector.tsx       # Property panel for dimensions & pose
+│   │   │   ├── MetricsBar.tsx          # Real-time room area & utilization stats
+│   │   │   ├── RoomSettings.tsx        # Dynamic wall length & height editor
+│   │   │   ├── Toolbar.tsx             # Action buttons, undo/redo, export
+│   │   │   └── ViewModeSwitch.tsx      # Inside / Overview / Plan mode toggle
 │   │   ├── scene/
-│   │   │   ├── FurnitureModel.tsx    # Procedural 3D furniture meshes
-│   │   │   ├── SceneCanvas.tsx       # R3F Canvas & Camera manager
-│   │   │   └── SceneWorld.tsx        # 3D room, floor, walls, lighting & SAT
-│   │   └── ui/                       # Reusable UI component library
+│   │   │   ├── FurnitureModel.tsx      # Procedural 3D furniture meshes
+│   │   │   ├── PlanView.tsx            # Top-down 2D orthographic CAD canvas
+│   │   │   ├── SceneCanvas.tsx         # R3F Canvas & Camera manager
+│   │   │   └── SceneWorld.tsx          # 3D room, floor, lighting, SAT collision
+│   │   └── ui/                         # Reusable UI component library
 │   ├── domain/
-│   │   ├── catalog.ts                # Default furniture catalog & samples
-│   │   ├── geometry.ts               # SAT collisions, containment, room area
-│   │   ├── types.ts                  # Shared TypeScript domain models
-│   │   └── validation.ts             # Zod & export schemas
+│   │   ├── catalog.ts                  # Furniture catalog & sample projects
+│   │   ├── geometry.ts                 # SAT collision engine, OBBs, door sweep
+│   │   ├── types.ts                    # TypeScript domain definitions
+│   │   └── validation.ts               # Input validation & JSON export schema
 │   ├── services/
-│   │   ├── vision-core.ts            # Canvas pixel ops, Sobel, surface fill
-│   │   ├── vision.ts                 # Vision service bridge
-│   │   └── vision.web.ts             # On-device browser COCO-SSD inference
+│   │   ├── vision-core.ts              # HTML5 Canvas pixel ops, Sobel, surface fill
+│   │   ├── vision.ts                   # Universal vision service bridge
+│   │   └── vision.web.ts               # On-device TensorFlow.js COCO-SSD inference
 │   └── store/
-│       └── useAppStore.ts            # Zustand global state with undo/redo
+│       └── useAppStore.ts              # Zustand global store with undo/redo
 ├── services/
-│   └── vision/                       # Python FastAPI Backend
+│   └── vision/                         # Python FastAPI Backend Service
 │       ├── app/
-│       │   ├── config.py             # Model thresholds & device config
-│       │   ├── depth.py              # Monocular depth estimation
-│       │   ├── inference.py          # Mask R-CNN furniture segmentation
-│       │   ├── inpainting.py         # Navier-Stokes / Telea inpainting
-│       │   ├── main.py               # FastAPI entrypoint & CORS
-│       │   ├── preprocessing.py      # OpenCV CLAHE, Sobel, morphology
-│       │   ├── room_analysis.py      # Vanishing points & plane fitting
-│       │   ├── routes.py             # REST endpoints
-│       │   └── schemas.py            # Pydantic request/response models
-│       ├── Dockerfile                # Containerized deployment
-│       ├── requirements.txt          # Python dependencies
-│       └── scripts/
-│           ├── download_models.py    # Offline model weights downloader
-│           ├── evaluate.py           # Quantitative evaluation & benchmarks
-│           └── prepare_datasets.py   # COCO furniture subset extractor
+│       │   ├── depth.py                # Monocular depth estimation
+│       │   ├── inference.py            # Mask R-CNN furniture segmentation
+│       │   ├── inpainting.py           # Navier-Stokes / Telea inpainting
+│       │   ├── main.py                 # FastAPI entrypoint & CORS
+│       │   ├── preprocessing.py        # OpenCV CLAHE, Sobel, morphology
+│       │   ├── room_analysis.py        # Vanishing points & plane fitting
+│       │   └── schemas.py              # Pydantic request/response schemas
+│       ├── scripts/
+│       │   ├── download_models.py      # Weights downloader
+│       │   ├── evaluate.py             # Quantitative benchmarks (mAP/PSNR/SSIM)
+│       │   └── prepare_datasets.py     # COCO subset extraction
+│       └── tests/                      # Python backend unit tests
 ├── tests/
-│   ├── geometry.test.mjs             # SAT collision & math test suite
-│   └── validation.test.mjs           # Schema & JSON export test suite
-├── docker-compose.yml                # Multi-service container orchestration
-├── Dockerfile                        # Production web container
-├── next.config.mjs                   # Next.js configuration
-├── package.json                      # Node dependencies & build scripts
-└── tsconfig.json                     # TypeScript configuration
+│   └── geometry.test.mjs               # Node.js automated test runner
+├── docker-compose.yml                  # Container orchestration
+├── Dockerfile                          # Multi-stage production web container
+├── next.config.mjs                     # Next.js config with allowedDevOrigins
+├── package.json                        # Project metadata & dependencies
+└── tsconfig.json                       # TypeScript compiler configuration
 ```
+
+---
+
+## 📄 License
+
+This project is open-source and licensed under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ by Arpit Kumar Singh for cutting-edge spatial visual computing.</sub>
+</div>
