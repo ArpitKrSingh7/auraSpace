@@ -1,20 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { Photo, Detection } from '@/domain/types';
 import { applyPixelOperation, approximateSurfaceFill } from '@/services/vision-core';
 import {
   Sparkles,
-  Sliders,
   Eye,
   Layers,
   Activity,
   Cpu,
   Box,
-  CheckCircle2,
   X,
-  RefreshCw,
-  Maximize2,
   Scissors,
 } from 'lucide-react';
 
@@ -23,6 +19,105 @@ interface AnalysisInspectorProps {
   onClose: () => void;
   onAddDetectionToRoom?: (detection: Detection) => void;
   onInpaintPreview?: (inpaintedUri: string) => void;
+}
+
+function BresenhamWidget() {
+  const [p1, setP1] = useState({ x: 2, y: 3 });
+  const [p2, setP2] = useState({ x: 20, y: 10 });
+  const gridW = 24;
+  const gridH = 14;
+
+  const points = useMemo(() => {
+    const list: Array<{ x: number; y: number }> = [];
+    let x0 = p1.x;
+    let y0 = p1.y;
+    const x1 = p2.x;
+    const y1 = p2.y;
+    const dx = Math.abs(x1 - x0);
+    const sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0);
+    const sy = y0 < y1 ? 1 : -1;
+    let error = dx + dy;
+    while (true) {
+      list.push({ x: x0, y: y0 });
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * error;
+      if (e2 >= dy) {
+        if (x0 === x1) break;
+        error += dy;
+        x0 += sx;
+      }
+      if (e2 <= dx) {
+        if (y0 === y1) break;
+        error += dx;
+        y0 += sy;
+      }
+    }
+    return list;
+  }, [p1, p2]);
+
+  const activeSet = useMemo(() => new Set(points.map((p) => `${p.x},${p.y}`)), [points]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between text-xs gap-2">
+        <span className="font-mono text-[11px] text-surface-600">
+          Edge: ({p1.x}, {p1.y}) → ({p2.x}, {p2.y}) · {points.length} Rasterized Discrete Pixels
+        </span>
+        <button
+          className="px-2.5 py-1 bg-surface-100 hover:bg-surface-200 rounded text-[11px] font-medium"
+          onClick={() => {
+            setP1({ x: Math.floor(Math.random() * 6), y: Math.floor(Math.random() * 12) });
+            setP2({ x: 14 + Math.floor(Math.random() * 9), y: Math.floor(Math.random() * 12) });
+          }}
+        >
+          Randomize Endpoints
+        </button>
+      </div>
+
+      <div className="bg-gray-900 p-2.5 rounded-xl overflow-x-auto flex justify-center">
+        <div
+          className="grid gap-[1px] bg-gray-800 border border-gray-700 rounded select-none"
+          style={{ gridTemplateColumns: `repeat(${gridW}, 14px)` }}
+        >
+          {Array.from({ length: gridH }).map((_, y) =>
+            Array.from({ length: gridW }).map((_, x) => {
+              const isActive = activeSet.has(`${x},${y}`);
+              const isStart = p1.x === x && p1.y === y;
+              const isEnd = p2.x === x && p2.y === y;
+              return (
+                <div
+                  key={`${x},${y}`}
+                  className={`w-[14px] h-[14px] transition-colors cursor-pointer ${
+                    isStart
+                      ? 'bg-amber-400'
+                      : isEnd
+                      ? 'bg-rose-400'
+                      : isActive
+                      ? 'bg-emerald-500'
+                      : 'bg-gray-950 hover:bg-gray-800'
+                  }`}
+                  title={`Pixel (${x}, ${y})`}
+                  onClick={() => setP2({ x, y })}
+                />
+              );
+            })
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-4 text-[10px] text-surface-500 justify-center">
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 bg-amber-400 rounded-sm inline-block" /> Start Point
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 bg-rose-400 rounded-sm inline-block" /> End (Click grid)
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 bg-emerald-500 rounded-sm inline-block" /> Bresenham Line
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function AnalysisInspector({
@@ -34,14 +129,12 @@ export function AnalysisInspector({
   const [activeTab, setActiveTab] = useState<'ip' | 'cv' | 'cg'>('ip');
   const [ipOperation, setIpOperation] = useState<'original' | 'grayscale' | 'contrast' | 'edges' | 'clahe' | 'inpainted'>('original');
   const [processedUri, setProcessedUri] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [sliderPos, setSliderPos] = useState(50);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Default sample image if none provided
-  const imageUri = photo?.uri || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400"><rect width="600" height="400" fill="%23EDE7DE"/><rect x="80" y="240" width="240" height="120" rx="16" fill="%238C9D88"/><rect x="360" y="220" width="160" height="140" rx="12" fill="%23C9977D"/><text x="140" y="310" fill="white" font-size="20" font-family="sans-serif">Sofa</text><text x="410" y="300" fill="white" font-size="18" font-family="sans-serif">Chair</text></svg>';
+  const imageUri =
+    photo?.uri ||
+    'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400"><rect width="600" height="400" fill="%23EDE7DE"/><rect x="80" y="240" width="240" height="120" rx="16" fill="%238C9D88"/><rect x="360" y="220" width="160" height="140" rx="12" fill="%23C9977D"/><text x="140" y="310" fill="white" font-size="20" font-family="sans-serif">Sofa</text><text x="410" y="300" fill="white" font-size="18" font-family="sans-serif">Chair</text></svg>';
 
-  // Execute classical Image Processing on Canvas
   useEffect(() => {
     if (!imageUri || ipOperation === 'original') {
       setProcessedUri(null);
@@ -62,7 +155,6 @@ export function AnalysisInspector({
       ctx.drawImage(img, 0, 0, w, h);
       const imgData = ctx.getImageData(0, 0, w, h);
 
-      setIsProcessing(true);
       try {
         if (ipOperation === 'grayscale' || ipOperation === 'contrast' || ipOperation === 'edges') {
           const processed = applyPixelOperation(imgData.data, w, h, ipOperation);
@@ -83,7 +175,6 @@ export function AnalysisInspector({
           setProcessedUri(uri);
           onInpaintPreview?.(uri);
         } else {
-          // CLAHE / equalization approximation
           const d = imgData.data;
           for (let i = 0; i < d.length; i += 4) {
             d[i] = Math.min(255, d[i] * 1.15);
@@ -95,8 +186,6 @@ export function AnalysisInspector({
         }
       } catch (err) {
         console.error('IP operation error:', err);
-      } finally {
-        setIsProcessing(false);
       }
     };
     img.src = imageUri;
@@ -109,7 +198,6 @@ export function AnalysisInspector({
         className="relative bg-white rounded-3xl shadow-heavy w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="bg-brand-500 text-white px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
@@ -118,7 +206,7 @@ export function AnalysisInspector({
             <div>
               <h2 className="text-base font-semibold">Academic Lab & Evidence Inspector</h2>
               <p className="text-xs text-white/70">
-                Live verification of Image Processing, Computer Vision & Computer Graphics
+                Verification of Image Processing, Computer Vision & Computer Graphics
               </p>
             </div>
           </div>
@@ -127,7 +215,6 @@ export function AnalysisInspector({
           </button>
         </div>
 
-        {/* Tab Navigation */}
         <div className="flex border-b border-surface-200 bg-surface-50 px-6 pt-3 gap-2">
           <button
             className={`pb-3 px-4 text-xs font-semibold flex items-center gap-2 border-b-2 transition-all ${
@@ -164,9 +251,7 @@ export function AnalysisInspector({
           </button>
         </div>
 
-        {/* Content Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* TAB 1: IMAGE PROCESSING */}
           {activeTab === 'ip' && (
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -202,7 +287,6 @@ export function AnalysisInspector({
                 </div>
               </div>
 
-              {/* Interactive Before/After Split Viewer */}
               <div className="relative rounded-2xl overflow-hidden border border-surface-200 bg-surface-100 max-h-[380px] flex items-center justify-center">
                 <img src={imageUri} alt="Original" className="max-h-[380px] w-full object-contain" />
                 {processedUri && (
@@ -214,7 +298,6 @@ export function AnalysisInspector({
                   </div>
                 )}
 
-                {/* Slider divider */}
                 {processedUri && (
                   <div
                     className="absolute top-0 bottom-0 w-0.5 bg-white shadow-heavy cursor-ew-resize flex items-center justify-center pointer-events-none"
@@ -226,7 +309,6 @@ export function AnalysisInspector({
                   </div>
                 )}
 
-                {/* Slider range control */}
                 {processedUri && (
                   <input
                     type="range"
@@ -239,12 +321,11 @@ export function AnalysisInspector({
                 )}
               </div>
 
-              {/* Explanatory Academic Card */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                 <div className="card p-4 space-y-1.5">
                   <span className="font-semibold text-brand-700">Luminance Grayscale</span>
                   <p className="text-surface-600">
-                    Weighted ITU-R BT.601 conversion: <code className="bg-surface-100 px-1 rounded">Y = 0.299R + 0.587G + 0.114B</code>. Matches human photopic spectral sensitivity.
+                    Weighted ITU-R BT.601 conversion: <code className="bg-surface-100 px-1 rounded">Y = 0.299R + 0.587G + 0.114B</code>. Matches human spectral response.
                   </p>
                 </div>
                 <div className="card p-4 space-y-1.5">
@@ -263,7 +344,6 @@ export function AnalysisInspector({
             </div>
           )}
 
-          {/* TAB 2: COMPUTER VISION */}
           {activeTab === 'cv' && (
             <div className="space-y-6">
               <div>
@@ -274,7 +354,6 @@ export function AnalysisInspector({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Visual Detections */}
                 <div className="relative rounded-2xl overflow-hidden border border-surface-200 bg-surface-100 flex items-center justify-center">
                   <img src={imageUri} alt="Room" className="w-full object-contain" />
                   {photo?.detections?.map((d, i) => (
@@ -295,7 +374,6 @@ export function AnalysisInspector({
                   ))}
                 </div>
 
-                {/* Detections List & Monocular Depth info */}
                 <div className="space-y-4">
                   <div className="card p-4 space-y-3">
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-surface-500">
@@ -343,7 +421,6 @@ export function AnalysisInspector({
             </div>
           )}
 
-          {/* TAB 3: COMPUTER GRAPHICS */}
           {activeTab === 'cg' && (
             <div className="space-y-6">
               <div>
@@ -369,7 +446,7 @@ projB = dot(cornersB, axis)
 if (max(projA) <= min(projB)) return false`}
                   </pre>
                   <p className="text-[11px] text-emerald-600 font-medium">
-                    ✓ Exact collision detection for arbitrary yaw $\theta$.
+                    ✓ Exact collision detection for arbitrary yaw θ.
                   </p>
                 </div>
 
@@ -402,10 +479,10 @@ hit = ray.intersectPlane(floorPlane)`}
                   </p>
                   <ul className="text-xs text-surface-600 space-y-1.5 list-disc pl-4">
                     <li>
-                      <strong>Perspective:</strong> Eye-level $68^\circ$ FOV inside-room walkthrough.
+                      <strong>Perspective:</strong> Eye-level 68° FOV inside-room walkthrough.
                     </li>
                     <li>
-                      <strong>Orthographic:</strong> Isometric $0^\circ$ parallel top-down plan view.
+                      <strong>Orthographic:</strong> Isometric 0° parallel top-down plan view.
                     </li>
                   </ul>
                   <p className="text-[11px] text-brand-600 font-medium">
@@ -413,11 +490,25 @@ hit = ray.intersectPlane(floorPlane)`}
                   </p>
                 </div>
               </div>
+
+              {/* Classical CG: Bresenham Line Algorithm Interactive Widget */}
+              <div className="card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-brand-600 font-semibold text-xs">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    Classical Rasterization: Bresenham's Integer Line Drawing Algorithm
+                  </div>
+                  <span className="text-[10px] text-surface-400 font-mono">PLAN.md §13 Standard</span>
+                </div>
+                <p className="text-xs text-surface-600">
+                  Rasterizes continuous mathematical vector edges onto discrete pixel displays using integer-only addition & bitshifts (no floating-point division):
+                </p>
+                <BresenhamWidget />
+              </div>
             </div>
           )}
         </div>
 
-        {/* Footer */}
         <div className="bg-surface-50 border-t border-surface-200 px-6 py-3.5 flex justify-between items-center text-xs text-surface-500">
           <span>Project: Morrow Room Studio · Course: ICG Lab</span>
           <button className="btn-secondary text-xs py-1.5 px-4" onClick={onClose}>

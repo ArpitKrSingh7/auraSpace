@@ -725,6 +725,78 @@ function PhotoUploadDialog({ onClose, onOpenInspector }: { onClose: () => void; 
     reader.readAsDataURL(file);
   };
 
+  const loadPresetSample = (type: 'living' | 'bedroom') => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 800;
+    canvas.height = 540;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = type === 'living' ? '#EDE7DE' : '#E7E5DA';
+    ctx.fillRect(0, 0, 800, 320);
+    ctx.fillStyle = type === 'living' ? '#C9A982' : '#D4B797';
+    ctx.fillRect(0, 320, 800, 220);
+
+    ctx.fillStyle = '#C2B8A8';
+    ctx.fillRect(0, 310, 800, 10);
+
+    if (type === 'living') {
+      ctx.fillStyle = '#8C9D88';
+      ctx.beginPath();
+      ctx.rect(140, 240, 320, 180);
+      ctx.fill();
+
+      ctx.fillStyle = '#C9977D';
+      ctx.beginPath();
+      ctx.rect(520, 260, 160, 160);
+      ctx.fill();
+
+      ctx.fillStyle = '#B58A60';
+      ctx.beginPath();
+      ctx.rect(260, 410, 220, 90);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#C9B9A5';
+      ctx.beginPath();
+      ctx.rect(220, 200, 360, 260);
+      ctx.fill();
+
+      ctx.fillStyle = '#A7835E';
+      ctx.beginPath();
+      ctx.rect(120, 300, 80, 120);
+      ctx.fill();
+    }
+
+    const dataUri = canvas.toDataURL('image/jpeg', 0.9);
+    setPreview(dataUri);
+
+    const sampleDetections =
+      type === 'living'
+        ? [
+            { id: `det-${Date.now()}-1`, label: 'couch', type: 'sofa' as const, score: 0.94, box: [140, 240, 320, 180] as [number, number, number, number], source: 'model' as const },
+            { id: `det-${Date.now()}-2`, label: 'chair', type: 'chair' as const, score: 0.88, box: [520, 260, 160, 160] as [number, number, number, number], source: 'model' as const },
+            { id: `det-${Date.now()}-3`, label: 'dining table', type: 'table' as const, score: 0.82, box: [260, 410, 220, 90] as [number, number, number, number], source: 'model' as const },
+          ]
+        : [
+            { id: `det-${Date.now()}-1`, label: 'bed', type: 'bed' as const, score: 0.96, box: [220, 200, 360, 260] as [number, number, number, number], source: 'model' as const },
+            { id: `det-${Date.now()}-2`, label: 'chair', type: 'chair' as const, score: 0.79, box: [120, 300, 80, 120] as [number, number, number, number], source: 'model' as const },
+          ];
+
+    const photo = {
+      id: `photo-${Date.now()}`,
+      uri: dataUri,
+      width: 800,
+      height: 540,
+      name: `${type}-sample-capture.jpg`,
+      detections: sampleDetections,
+      analysisStatus: 'complete' as const,
+    };
+
+    addPhoto(photo);
+    setDetections(sampleDetections);
+    addToast(`Loaded ${type} room sample with ${sampleDetections.length} AI detections!`, 'success');
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
@@ -743,19 +815,41 @@ function PhotoUploadDialog({ onClose, onOpenInspector }: { onClose: () => void; 
         </p>
 
         {!preview ? (
-          <div
-            className="border-2 border-dashed border-surface-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-all"
-            onClick={() => fileInputRef.current?.click()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const file = e.dataTransfer.files[0];
-              if (file) handleFile(file);
-            }}
-            onDragOver={(e) => e.preventDefault()}
-          >
-            <Camera className="w-10 h-10 text-surface-400 mx-auto mb-3" />
-            <p className="text-sm font-medium mb-1">Drop a photo here or click to browse</p>
-            <p className="text-xs text-surface-500">JPG, PNG, WebP up to 20MP</p>
+          <div className="space-y-4">
+            <div
+              className="border-2 border-dashed border-surface-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-all"
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file) handleFile(file);
+              }}
+              onDragOver={(e) => e.preventDefault()}
+            >
+              <Camera className="w-10 h-10 text-surface-400 mx-auto mb-3" />
+              <p className="text-sm font-medium mb-1">Drop a photo here or click to browse</p>
+              <p className="text-xs text-surface-500">JPG, PNG, WebP up to 20MP</p>
+            </div>
+
+            <div className="pt-2 border-t border-surface-200">
+              <p className="text-xs font-semibold text-surface-600 mb-2">Or test immediately with a sample room photo:</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary text-xs py-2 px-3 flex items-center justify-center gap-1.5"
+                  onClick={() => loadPresetSample('living')}
+                >
+                  🛋️ Living Room Sample
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary text-xs py-2 px-3 flex items-center justify-center gap-1.5"
+                  onClick={() => loadPresetSample('bedroom')}
+                >
+                  🛏️ Bedroom Sample
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
