@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PYTHON_SERVICE_URL = process.env.VISION_SERVICE_URL || process.env.NEXT_PUBLIC_VISION_API_URL || 'http://localhost:8000';
+function getVisionUrl(path: string): URL {
+  const base = process.env.VISION_SERVICE_URL || process.env.NEXT_PUBLIC_VISION_API_URL || 'http://localhost:8000';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  return new URL(path.replace(/^\//, ''), normalizedBase);
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // If external Python vision service is reachable, forward to it
+    // If external Python vision service is reachable via service binding, forward to it
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(`${PYTHON_SERVICE_URL.replace(/\/$/, '')}/process`, {
+      const targetUrl = getVisionUrl('process');
+      const res = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

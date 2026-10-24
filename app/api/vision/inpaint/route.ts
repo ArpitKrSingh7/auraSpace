@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PYTHON_SERVICE_URL = process.env.VISION_SERVICE_URL || process.env.NEXT_PUBLIC_VISION_API_URL || 'http://localhost:8000';
+function getVisionUrl(path: string): URL {
+  const base = process.env.VISION_SERVICE_URL || process.env.NEXT_PUBLIC_VISION_API_URL || 'http://localhost:8000';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  return new URL(path.replace(/^\//, ''), normalizedBase);
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Try forwarding to Python FastAPI inpainting service if available
+    // Try forwarding to Python FastAPI inpainting service via service binding if available
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 12000);
-      const res = await fetch(`${PYTHON_SERVICE_URL.replace(/\/$/, '')}/inpaint`, {
+      const targetUrl = getVisionUrl('inpaint');
+      const res = await fetch(targetUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

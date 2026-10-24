@@ -9,6 +9,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - VISION_SERVICE_URL=http://vision:8000
       - NEXT_PUBLIC_VISION_API_URL=http://vision:8000
     depends_on:
       - vision
