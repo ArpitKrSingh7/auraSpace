@@ -75,7 +75,9 @@ export function getProjectWarnings(project: Project): ProjectWarning[] {
 }
 
 export function snapPosition(value: number, enabled = true, step = 0.1): number {
-  return enabled ? Math.round(value / step) * step : value;
+  if (!enabled) return value;
+  const snapped = Math.round(value / step) * step;
+  return Number(snapped.toFixed(4));
 }
 
 export function normalizeRotation(degrees: number): number {
