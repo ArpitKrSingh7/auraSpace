@@ -1,7 +1,6 @@
-'use client';
+"use client";
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 interface BottomSheetProps {
   open: boolean;
@@ -26,7 +25,8 @@ export function BottomSheet({
   const [translate, setTranslate] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  const expandedHeight = typeof window !== 'undefined' ? window.innerHeight * 0.65 : 500;
+  const expandedHeight =
+    typeof window !== "undefined" ? window.innerHeight * 0.65 : 500;
 
   useEffect(() => {
     setTranslate(0);
@@ -40,13 +40,16 @@ export function BottomSheet({
     setDragging(true);
   }, []);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!dragging) return;
-    const touch = e.touches[0];
-    if (!touch) return;
-    const dy = touch.clientY - startY.current;
-    setTranslate(Math.max(-expandedHeight + peekHeight, dy));
-  }, [dragging, expandedHeight, peekHeight]);
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (!dragging) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const dy = touch.clientY - startY.current;
+      setTranslate(Math.max(-expandedHeight + peekHeight, dy));
+    },
+    [dragging, expandedHeight, peekHeight],
+  );
 
   const handleTouchEnd = useCallback(() => {
     setDragging(false);
@@ -65,7 +68,14 @@ export function BottomSheet({
       }
     }
     setTranslate(0);
-  }, [expanded, translate, expandedHeight, peekHeight, onExpandedChange, onOpenChange]);
+  }, [
+    expanded,
+    translate,
+    expandedHeight,
+    peekHeight,
+    onExpandedChange,
+    onOpenChange,
+  ]);
 
   if (!open) return null;
 
@@ -79,7 +89,9 @@ export function BottomSheet({
       style={{
         height: currentHeight,
         transform: `translateY(${Math.max(0, visualTranslate)}px)`,
-        transition: dragging ? 'none' : 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        transition: dragging
+          ? "none"
+          : "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
       {/* Handle */}
@@ -96,12 +108,12 @@ export function BottomSheet({
             setTranslate(dy);
           };
           const onUp = () => {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
             handleTouchEnd();
           };
-          document.addEventListener('mousemove', onMove);
-          document.addEventListener('mouseup', onUp);
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
           setDragging(true);
         }}
       >
