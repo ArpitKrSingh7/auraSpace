@@ -45,6 +45,7 @@ def create_removal_mask(
     image_shape: tuple[int, ...],
     boxes: list[list[float]],
     dilation: int | None = None,
+    dilation_iterations: int = 1,
 ) -> np.ndarray:
     """Create a binary mask from bounding boxes with optional dilation.
 
@@ -59,7 +60,7 @@ def create_removal_mask(
     image_shape : tuple
         (H, W) or (H, W, C) of the target image.
     boxes : list[list[float]]
-        List of [x1, y1, x2, y2] bounding boxes.
+        List of [x, y, width, height] bounding boxes in source pixels.
     dilation : int | None
         Dilation kernel size.  Defaults to ``INPAINT_MASK_DILATION``.
 
@@ -72,17 +73,19 @@ def create_removal_mask(
     mask = np.zeros((h, w), dtype=np.uint8)
 
     for box in boxes:
-        x1, y1, x2, y2 = [int(round(v)) for v in box]
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(w, x2)
-        y2 = min(h, y2)
-        cv2.rectangle(mask, (x1, y1), (x2, y2), 255, thickness=-1)
+        if len(box) != 4 or not np.isfinite(box).all():
+            raise ValueError("Each box must have four finite coordinates")
+        x, y, width, height = box
+        if width <= 0 or height <= 0:
+            raise ValueError("Box width and height must be positive")
+        x1, y1 = max(0, int(np.floor(x))), max(0, int(np.floor(y)))
+        x2, y2 = min(w, int(np.ceil(x + width))), min(h, int(np.ceil(y + height)))
+        if x2 > x1 and y2 > y1:
+            mask[y1:y2, x1:x2] = 255
 
-    # Dilate to ensure edges are covered
-    dilation = dilation or INPAINT_MASK_DILATION
-    if dilation > 0:
-        mask = apply_morphology(mask, operation="dilate", kernel_size=dilation, iterations=1)
+    dilation = INPAINT_MASK_DILATION if dilation is None else dilation
+    if dilation > 0 and dilation_iterations > 0:
+        mask = apply_morphology(mask, operation="dilate", kernel_size=dilation, iterations=dilation_iterations)
 
     return mask
 
@@ -220,6 +223,8 @@ def remove_furniture(
         (inpainted_image, method_used)
     """
     radius = radius or INPAINT_RADIUS
+    if mask.shape[:2] != image.shape[:2]:
+        raise ValueError("Mask and image dimensions must match")
 
     # Ensure mask is single-channel
     if len(mask.shape) == 3:
@@ -228,6 +233,8 @@ def remove_furniture(
     mask_area = int(np.sum(mask > 0))
     total_area = mask.shape[0] * mask.shape[1]
     mask_ratio = mask_area / total_area if total_area > 0 else 0
+    if mask_area == 0 or mask_area == total_area:
+        raise ValueError("Select part of the image and leave surrounding surfaces visible")
 
     logger.info(
         "Inpainting request: method=%s, mask_pixels=%d (%.1f%% of image)",

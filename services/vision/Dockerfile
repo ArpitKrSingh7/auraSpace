@@ -11,10 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-depth.txt ./
+RUN pip install --no-cache-dir -r requirements-depth.txt
 
 COPY app/ ./app/
+COPY model-manifest.json ./model-manifest.json
 
 EXPOSE 8000
 

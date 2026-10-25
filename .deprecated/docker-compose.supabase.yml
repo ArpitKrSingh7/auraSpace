@@ -1,0 +1,9 @@
+# Use last, after platform + app, with --env-file .env.backend.local.
+# Only storage is overridden; the base stack still supplies local PostgreSQL/Redis.
+services:
+  api:
+    environment:
+      S3_ENDPOINT: ${S3_ENDPOINT:?Set the Supabase S3 endpoint in .env.backend.local}
+  worker:
+    environment:
+      S3_ENDPOINT: ${S3_ENDPOINT:?Set the Supabase S3 endpoint in .env.backend.local}

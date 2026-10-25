@@ -1,19 +1,27 @@
 import { NextResponse } from 'next/server';
 
 function getVisionUrl(path: string): URL {
-  const base = process.env.VISION_SERVICE_URL || process.env.NEXT_PUBLIC_VISION_API_URL || 'http://localhost:8000';
+  const base =
+    process.env.VISION_SERVICE_URL ||
+    process.env.NEXT_PUBLIC_VISION_API_URL ||
+    'http://localhost:8000';
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
   return new URL(path.replace(/^\//, ''), normalizedBase);
 }
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   let visionStatus = 'disconnected';
-  if (process.env.VISION_SERVICE_URL || process.env.NEXT_PUBLIC_VISION_API_URL) {
+  if (
+    process.env.VISION_SERVICE_URL ||
+    process.env.NEXT_PUBLIC_VISION_API_URL
+  ) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(getVisionUrl('health'), { signal: controller.signal });
-      clearTimeout(timeout);
+      const res = await fetch(getVisionUrl('health'), {
+        signal: AbortSignal.timeout(2000),
+        cache: 'no-store',
+      });
       if (res.ok) {
         visionStatus = 'connected';
       }

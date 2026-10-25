@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ['three', '@react-three/fiber', '@react-three/drei'],
+  transpilePackages: ['three', '@react-three/fiber', '@react-three/drei', '@auraspace/scene-domain', '@auraspace/contracts', '@auraspace/scene-assets'],
   allowedDevOrigins: [
     '172.17.240.193',
     'localhost',

@@ -1,0 +1,16 @@
+{
+  "name": "@auraspace/scene-assets",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/FurnitureModel.tsx"
+  },
+  "peerDependencies": {
+    "react": ">=18 <20",
+    "three": ">=0.160.0 <1"
+  },
+  "dependencies": {
+    "@auraspace/scene-domain": "workspace:*"
+  }
+}

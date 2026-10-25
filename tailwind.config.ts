@@ -1,13 +1,22 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
-  content: [
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
-  ],
+  content: ['./app/**/*.{ts,tsx}', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
+        brand: {
+          50: '#f0f5f3',
+          100: '#dce8e3',
+          200: '#b8d1c7',
+          300: '#8db5a5',
+          400: '#5e9481',
+          500: '#3e6658',
+          600: '#325248',
+          700: '#293f3a',
+          800: '#22332f',
+          900: '#1c2a27',
+        },
         primary: {
           DEFAULT: '#3e6658',
           light: '#4d7d6b',
@@ -24,6 +33,16 @@ const config: Config = {
           900: '#1c2a27',
         },
         surface: {
+          50: '#faf9f6',
+          100: '#f3f1ec',
+          200: '#e7e4dc',
+          300: '#d4d0c6',
+          400: '#99978d',
+          500: '#73766d',
+          600: '#575e54',
+          700: '#3e473d',
+          800: '#2c362e',
+          900: '#202b24',
           DEFAULT: '#faf8f5',
           warm: '#f5f0ea',
           muted: '#ede7de',
@@ -51,9 +70,15 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          'system-ui', '-apple-system', 'BlinkMacSystemFont',
-          '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial',
-          '"Noto Sans"', 'sans-serif',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          '"Noto Sans"',
+          'sans-serif',
         ],
       },
       borderRadius: {
@@ -61,6 +86,7 @@ const config: Config = {
         btn: '8px',
       },
       boxShadow: {
+        heavy: '0 20px 70px rgba(28, 42, 39, 0.18)',
         soft: '0 2px 8px rgba(44, 44, 44, 0.08)',
         medium: '0 4px 16px rgba(44, 44, 44, 0.12)',
         elevated: '0 8px 32px rgba(44, 44, 44, 0.16)',

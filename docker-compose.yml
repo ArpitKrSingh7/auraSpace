@@ -1,27 +1,76 @@
-version: '3.8'
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: infra/backend.Dockerfile
+  image: auraspace-backend:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://auraspace:${POSTGRES_PASSWORD:-local-auraspace-database-only}@database:5432/auraspace
+    REDIS_URL: redis://:${REDIS_PASSWORD:-local-auraspace-queue-only}@redis:6379
+    VISION_SERVICE_URL: http://vision:8000
+    HOST: 0.0.0.0
+    PORT: 4000
 
 services:
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+  database:
+    image: postgres:16-alpine
     environment:
-      - NODE_ENV=production
-      - VISION_SERVICE_URL=http://vision:8000
-      - NEXT_PUBLIC_VISION_API_URL=http://vision:8000
+      POSTGRES_USER: auraspace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-auraspace-database-only}
+      POSTGRES_DB: auraspace
+    ports: ["127.0.0.1:5438:5432"]
+    volumes: ["auraspace-db:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auraspace"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-local-auraspace-queue-only}"]
+    ports: ["127.0.0.1:6388:6379"]
+    volumes: ["auraspace-queue:/data"]
+  migrate:
+    <<: *backend
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"]
     depends_on:
-      - vision
+      database: {condition: service_healthy}
+  api:
+    <<: *backend
+    ports: ["${API_BIND_ADDRESS:-127.0.0.1}:4000:4000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+    restart: unless-stopped
+  worker:
+    <<: *backend
+    command: ["node", "--import", "tsx", "apps/worker/src/index.ts"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_started}
+      vision: {condition: service_started}
+    restart: unless-stopped
+  vision:
+    build: services/vision
+    environment:
+      TORCH_DEVICE: cpu
+      OMP_NUM_THREADS: 4
+      MKL_NUM_THREADS: 4
+      MASKRCNN_MODEL_PATH: /models/maskrcnn_resnet50_fpn_v2_coco-73cbd019.pth
+      MASKRCNN_MODEL_SHA256: 73cbd0190fcbe3ba339921fbce2c3a0b6bb9126c9a133c85e43a2a8e060a109e
+      LAMA_MODEL_PATH: /models/big-lama.pt
+      LAMA_MODEL_SHA256: 344c77bbcb158f17dd143070d1e789f38a66c04202311ae3a258ef66667a9ea9
+      METRIC_DEPTH_MODEL_PATH: /models/depth-anything-v2-metric-indoor-small
+    volumes: ["./.artifacts/models:/models:ro"]
+    restart: unless-stopped
+  web:
+    build: .
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      VISION_SERVICE_URL: http://vision:8000
+    depends_on: [vision]
     restart: unless-stopped
 
-  vision:
-    build:
-      context: ./services/vision
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - LOG_LEVEL=info
-      - DEVICE=cpu
-    restart: unless-stopped
+volumes:
+  auraspace-db:
+  auraspace-queue:

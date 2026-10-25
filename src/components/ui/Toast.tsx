@@ -30,18 +30,20 @@ export function ToastContainer() {
   if (!mounted || toasts.length === 0) return null;
 
   const content = (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4">
+    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4">
       {toasts.map((toast) => (
         <div
           key={toast.id}
           className={[
-            'animate-bounce-in rounded-xl px-4 py-2.5 shadow-medium flex items-center gap-2.5 pointer-events-auto cursor-pointer',
+            'animate-toast-in rounded-xl px-4 py-2.5 shadow-medium flex items-center gap-2.5 pointer-events-auto cursor-pointer',
             typeColors[toast.type] || 'bg-brand-600 text-white',
           ].join(' ')}
           onClick={() => removeToast(toast.id)}
           role="alert"
         >
-          <span className="text-sm font-bold">{typeIcons[toast.type] || 'ℹ'}</span>
+          <span className="text-sm font-bold">
+            {typeIcons[toast.type] || 'ℹ'}
+          </span>
           <span className="text-sm font-medium flex-1">{toast.message}</span>
         </div>
       ))}

@@ -1,26 +1,5 @@
 {
-  "detection_evaluation": {
-    "dataset": "COCO 2017 Furniture Subset (Chair, Couch, Bed, Table, Plant)",
-    "sample_count": 150,
-    "metrics": {
-      "mAP_50": 0.684,
-      "mAP_50_95": 0.472,
-      "chair_ap50": 0.652,
-      "couch_ap50": 0.741,
-      "bed_ap50": 0.785,
-      "table_ap50": 0.612,
-      "plant_ap50": 0.628
-    }
-  },
-  "inpainting_preservation": {
-    "metric": "PSNR & SSIM on unmasked background pixels",
-    "psnr_db": 38.4,
-    "ssim": 0.962,
-    "status": "PASS: Unmasked structural pixels strictly preserved without leakage"
-  },
-  "geometry_sat_collision": {
-    "test_cases": 7,
-    "pass_rate": 1.0,
-    "rotated_obb_accuracy": "100% exact Separating Axis Theorem"
-  }
+  "status": "not_evaluated",
+  "metrics": null,
+  "reason": "Provide real COCO annotations and saved model predictions. Previous hardcoded benchmark values were not measured and have been removed."
 }

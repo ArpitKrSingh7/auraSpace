@@ -1,0 +1,3 @@
+'use client';
+import Link from'next/link';
+export default function RecoverablePage({reset}:{error:Error&{digest?:string};reset:()=>void}){return<main className="flex min-h-screen flex-col items-center justify-center gap-5 px-6 text-center"><div className="max-w-md"><h1 className="studio-heading text-3xl text-brand-700">Let’s reopen this view.</h1><p className="mt-3 text-sm leading-6 text-surface-600">Your saved rooms are still on this device. Retry this view, or return to your studio.</p></div><div className="flex gap-3"><button className="btn-primary"onClick={reset}>Try again</button><Link className="btn-secondary"href="/">Back to studio</Link></div></main>;}

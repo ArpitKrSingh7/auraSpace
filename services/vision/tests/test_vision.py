@@ -47,8 +47,8 @@ class TestVisionAlgorithms(unittest.TestCase):
         self.assertEqual(enhanced.dtype, np.uint8)
 
     def test_inpainting_mask_and_fill(self):
-        # Sofa bounding box [x1, y1, x2, y2]
-        boxes = [[30, 40, 70, 80]]
+        # Sofa bounding box [x, y, width, height]
+        boxes = [[30, 40, 40, 40]]
         mask = create_removal_mask(self.test_img.shape, boxes, dilation_iterations=1)
         self.assertEqual(mask.shape, (100, 100))
         self.assertTrue(np.any(mask == 255))
@@ -57,6 +57,21 @@ class TestVisionAlgorithms(unittest.TestCase):
         self.assertEqual(inpainted.shape, self.test_img.shape)
         # Background outside the mask should be preserved
         np.testing.assert_array_equal(self.test_img[:30, :], inpainted[:30, :])
+
+    def test_mask_coordinates_are_width_height_and_zero_dilation_is_respected(self):
+        mask = create_removal_mask((100, 100, 3), [[30, 40, 10, 20]], dilation=0)
+        self.assertEqual(int(np.sum(mask > 0)), 200)
+        self.assertEqual(mask[59, 39], 255)
+        self.assertEqual(mask[60, 40], 0)
+
+    def test_full_image_mask_is_rejected(self):
+        with self.assertRaises(ValueError):
+            remove_furniture(self.test_img, np.full((100, 100), 255, dtype=np.uint8))
+
+    def test_decode_keeps_source_dimensions(self):
+        from app.preprocessing import decode_base64_image
+        source = np.zeros((1200, 1600, 3), dtype=np.uint8)
+        self.assertEqual(decode_base64_image(encode_image(source, fmt="png")).shape, source.shape)
 
     def test_image_encoding(self):
         data_uri = encode_image(self.test_img, fmt="png")

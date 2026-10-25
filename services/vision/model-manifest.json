@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "name": "Mask R-CNN ResNet50 FPN v2 COCO_V1",
+      "file": "maskrcnn_resnet50_fpn_v2_coco-73cbd019.pth",
+      "url": "https://download.pytorch.org/models/maskrcnn_resnet50_fpn_v2_coco-73cbd019.pth",
+      "sha256": "73cbd0190fcbe3ba339921fbce2c3a0b6bb9126c9a133c85e43a2a8e060a109e",
+      "source": "https://pytorch.org/vision/stable/models/generated/torchvision.models.detection.maskrcnn_resnet50_fpn_v2.html"
+    },
+    {
+      "name": "Big-LaMa IOPaint TorchScript export",
+      "file": "big-lama.pt",
+      "url": "https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt",
+      "sha256": "344c77bbcb158f17dd143070d1e789f38a66c04202311ae3a258ef66667a9ea9",
+      "publisherMd5": "e3aa4aaa15225a33ec84f9f4bc47e500",
+      "source": "https://github.com/Sanster/IOPaint/blob/main/iopaint/model/lama.py"
+    }
+  ],
+  "metricDepth": {
+    "name": "Depth Anything V2 Metric Indoor Small (Hypersim)",
+    "repository": "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf",
+    "revision": "8078d68a9c75a972131914f6afd0c1723be0da7f",
+    "directory": "depth-anything-v2-metric-indoor-small",
+    "files": [
+      {
+        "name": "config.json",
+        "sha256": "0b1d9fc591693d16b864249a9cfcf5264c8c00be999c1643fa1c64dc105d55f8",
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf/resolve/8078d68a9c75a972131914f6afd0c1723be0da7f/config.json"
+      },
+      {
+        "name": "preprocessor_config.json",
+        "sha256": "533b16a60445d7cab5086d39b45f92be45624b977972c62d5984d93e98366063",
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf/resolve/8078d68a9c75a972131914f6afd0c1723be0da7f/preprocessor_config.json"
+      },
+      {
+        "name": "model.safetensors",
+        "sha256": "e990eb82fbf11b05b7813261196a2b841bdcf5a05f64396724a8987fa90504a3",
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf/resolve/8078d68a9c75a972131914f6afd0c1723be0da7f/model.safetensors"
+      }
+    ]
+  }
+}

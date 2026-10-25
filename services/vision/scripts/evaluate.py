@@ -1,75 +1,58 @@
 #!/usr/bin/env python3
-"""
-Model Evaluation Script
-=======================
-Measures quantitative benchmarks for:
-1. Object detection Precision, Recall, and mAP@0.5 IoU
-2. Mask segmentation IoU against ground truth
-3. Inpainting SSIM & PSNR preservation metrics outside removed regions
-"""
+"""Evaluate saved COCO-format predictions against annotations at a fixed IoU.
 
+No checkpoint is run and no metrics are invented when inputs are absent.
+This reports matched-box precision/recall, not COCO mAP or depth accuracy.
+"""
+import argparse
 import json
-import math
 from pathlib import Path
-from typing import Any
 
-def compute_box_iou(boxA: list[float], boxB: list[float]) -> float:
-    # box format: [x, y, w, h]
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[0] + boxA[2], boxB[0] + boxB[2])
-    yB = min(boxA[1] + boxA[3], boxB[1] + boxB[3])
 
-    interArea = max(0, xB - xA) * max(0, yB - yA)
-    boxAArea = boxA[2] * boxA[3]
-    boxBArea = boxB[2] * boxB[3]
-    union = boxAArea + boxBArea - interArea
-    return interArea / union if union > 0 else 0.0
+def compute_box_iou(boxA, boxB):
+    left, top = max(boxA[0], boxB[0]), max(boxA[1], boxB[1])
+    right = min(boxA[0] + boxA[2], boxB[0] + boxB[2])
+    bottom = min(boxA[1] + boxA[3], boxB[1] + boxB[3])
+    intersection = max(0, right - left) * max(0, bottom - top)
+    union = boxA[2] * boxA[3] + boxB[2] * boxB[3] - intersection
+    return intersection / union if union > 0 else 0.0
 
-def evaluate_benchmarks() -> dict[str, Any]:
-    print("Running vision and inpainting benchmarks...")
-    
-    # Representative benchmark numbers from test evaluation runs
-    results = {
-        "detection_evaluation": {
-            "dataset": "COCO 2017 Furniture Subset (Chair, Couch, Bed, Table, Plant)",
-            "sample_count": 150,
-            "metrics": {
-                "mAP_50": 0.684,
-                "mAP_50_95": 0.472,
-                "chair_ap50": 0.652,
-                "couch_ap50": 0.741,
-                "bed_ap50": 0.785,
-                "table_ap50": 0.612,
-                "plant_ap50": 0.628,
-            }
-        },
-        "inpainting_preservation": {
-            "metric": "PSNR & SSIM on unmasked background pixels",
-            "psnr_db": 38.4,
-            "ssim": 0.962,
-            "status": "PASS: Unmasked structural pixels strictly preserved without leakage"
-        },
-        "geometry_sat_collision": {
-            "test_cases": 7,
-            "pass_rate": 1.0,
-            "rotated_obb_accuracy": "100% exact Separating Axis Theorem"
-        }
+
+def evaluate_benchmarks(annotations=None, predictions=None, threshold=0.5):
+    if annotations is None or predictions is None:
+        return {"status": "not_evaluated", "metrics": None, "reason": "Provide real COCO annotations and saved model predictions. Previous hardcoded benchmark values were not measured and have been removed."}
+    furniture = {62, 63, 64, 65, 67}
+    image_ids = {image['id'] for image in annotations['images']}
+    truth = [a for a in annotations['annotations'] if a['image_id'] in image_ids and a['category_id'] in furniture and not a.get('iscrowd')]
+    guessed = sorted([p for p in predictions if p['image_id'] in image_ids and p['category_id'] in furniture], key=lambda p: p['score'], reverse=True)
+    matched = set()
+    true_positive = 0
+    for prediction in guessed:
+        candidates = [(compute_box_iou(prediction['bbox'], actual['bbox']), i) for i, actual in enumerate(truth) if i not in matched and actual['image_id'] == prediction['image_id'] and actual['category_id'] == prediction['category_id']]
+        best = max(candidates, default=(0, -1))
+        if best[0] >= threshold:
+            matched.add(best[1])
+            true_positive += 1
+    return {
+        'status': 'evaluated_saved_predictions', 'image_count': len(image_ids), 'ground_truth_boxes': len(truth),
+        'predicted_boxes': len(guessed), 'iou_threshold': threshold,
+        'metrics': {'true_positive': true_positive, 'false_positive': len(guessed) - true_positive, 'false_negative': len(truth) - true_positive,
+                    'precision': true_positive / len(guessed) if guessed else None, 'recall': true_positive / len(truth) if truth else None},
+        'limitations': 'Greedy category-aware matching of non-crowd furniture boxes. This is not COCO mAP. No mask, depth, dimensional, or removal-quality evaluation is performed.',
     }
-    
-    print("\nBenchmark Summary:")
-    print(f"  • Detection mAP@0.5: {results['detection_evaluation']['metrics']['mAP_50'] * 100:.1f}%")
-    print(f"  • Couch AP@0.5:     {results['detection_evaluation']['metrics']['couch_ap50'] * 100:.1f}%")
-    print(f"  • Bed AP@0.5:       {results['detection_evaluation']['metrics']['bed_ap50'] * 100:.1f}%")
-    print(f"  • Inpainting PSNR:  {results['inpainting_preservation']['psnr_db']} dB (SSIM: {results['inpainting_preservation']['ssim']})")
-    print(f"  • SAT Collision:    {results['geometry_sat_collision']['pass_rate'] * 100:.0f}% Pass")
-    
-    return results
 
-if __name__ == "__main__":
-    out_dir = Path(__file__).resolve().parent.parent / "reports"
-    out_dir.mkdir(exist_ok=True)
-    report = evaluate_benchmarks()
-    with open(out_dir / "evaluation_report.json", "w") as f:
-        json.dump(report, f, indent=2)
-    print(f"✓ Saved benchmark report to {out_dir / 'evaluation_report.json'}")
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--annotations', type=Path)
+    parser.add_argument('--predictions', type=Path)
+    parser.add_argument('--output', type=Path, default=Path(__file__).resolve().parent.parent / 'reports/evaluation_report.json')
+    args = parser.parse_args()
+    if bool(args.annotations) != bool(args.predictions):
+        parser.error('Provide both --annotations and --predictions')
+    report = evaluate_benchmarks(json.loads(args.annotations.read_text()) if args.annotations else None, json.loads(args.predictions.read_text()) if args.predictions else None)
+    if args.annotations:
+        report['inputs'] = {'annotations': str(args.annotations), 'predictions': str(args.predictions)}
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(report, indent=2) + '\n')
+    print(json.dumps(report, indent=2))

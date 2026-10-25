@@ -1,48 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { proxyVision } from '@/server/vision-proxy';
 
-function getVisionUrl(path: string): URL {
-  const base = process.env.VISION_SERVICE_URL || process.env.NEXT_PUBLIC_VISION_API_URL || 'http://localhost:8000';
-  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-  return new URL(path.replace(/^\//, ''), normalizedBase);
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-
-    // If external Python vision service is reachable via service binding, forward to it
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const targetUrl = getVisionUrl('process');
-      const res = await fetch(targetUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const data = await res.json();
-        return NextResponse.json(data);
-      }
-    } catch {
-      // Fall through to self-contained response
-    }
-
-    // Fallback: return image with metadata
-    return NextResponse.json({
-      uri: body.image,
-      metadata: {
-        operation: body.operation,
-        status: 'processed-fallback',
-        note: 'Classical pixel processing is accelerated client-side via HTML5 canvas & web workers.',
-      },
-    });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || 'Processing failed' },
-      { status: 400 }
-    );
-  }
+export function POST(req: NextRequest) {
+  return proxyVision(req, 'process');
 }

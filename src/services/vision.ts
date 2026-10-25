@@ -3,7 +3,7 @@ import { parseDetections, postVision, VisionError } from './vision-core';
 import type { ImageOperation, Progress } from './vision-core';
 export { VisionError } from './vision-core';
 
-const endpoint = (typeof process !== 'undefined' && (process.env.NEXT_PUBLIC_VISION_API_URL || process.env.EXPO_PUBLIC_VISION_API_URL))?.replace(/\/$/, '');
+const endpoint = typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_VISION_API_URL || process.env.EXPO_PUBLIC_VISION_API_URL)?.replace(/\/$/, '') : undefined;
 export const modelStatus = 'Image service configured. Manual layout and detection always available.';
 
 async function payload(photo: Photo): Promise<string> {

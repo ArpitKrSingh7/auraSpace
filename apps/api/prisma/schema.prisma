@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model Project {
+  id String @id
+  ownerId String
+  name String
+  scene Json
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+  jobs Job[]
+  captures Capture[]
+  artifacts Artifact[]
+  @@index([ownerId, deletedAt])
+}
+model Session {
+  id String @id
+  tokenHash String @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+model Capture {
+  id String @id
+  projectId String
+  project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  status String @default("pending")
+  finalizedAt DateTime?
+  createdAt DateTime @default(now())
+  uploads Upload[]
+  @@index([projectId])
+}
+model Upload {
+  id String @id
+  captureId String
+  capture Capture @relation(fields:[captureId],references:[id],onDelete:Cascade)
+  artifactId String @unique
+  artifact Artifact @relation(fields:[artifactId],references:[id],onDelete:Cascade)
+  expectedSha256 String
+  expectedBytes Int
+  expiresAt DateTime
+  completedAt DateTime?
+}
+model Artifact {
+  id String @id
+  projectId String
+  project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  kind String
+  key String @unique
+  mimeType String
+  byteLength Int
+  sha256 String
+  ready Boolean @default(false)
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+  upload Upload?
+  @@index([projectId,deletedAt])
+}
+model Job {
+  id String @id
+  projectId String
+  project Project @relation(fields:[projectId],references:[id],onDelete:Cascade)
+  kind String
+  inputRevision Int
+  input Json
+  inputHash String
+  idempotencyKey String
+  status String @default("queued")
+  stage String @default("validation")
+  completedStages Json @default("[]")
+  attempt Int @default(0)
+  cancelRequested Boolean @default(false)
+  result Json?
+  error String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([projectId,idempotencyKey])
+  @@index([status,updatedAt])
+}

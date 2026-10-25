@@ -1,0 +1,13 @@
+{
+  "name": "@auraspace/scene-domain",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./legacy/*": "./src/legacy/*.ts"
+  },
+  "dependencies": {
+    "zod": "^3.22.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "source": "COCO val2017 image 39769 (public smoke fixture, not a quality benchmark)",
+  "detection": {
+    "labels": [
+      "couch"
+    ],
+    "processingTimeMs": 3277.99,
+    "modelVersions": {
+      "detection": "torchvision-maskrcnn-resnet50-fpn-v2-COCO_V1",
+      "depth": "not-requested"
+    }
+  },
+  "inpainting": {
+    "method": "Big-LaMa TorchScript sha256:344c77bbcb158f17dd143070d1e789f38a66c04202311ae3a258ef66667a9ea9",
+    "outsideMaskPixelsUnchanged": true,
+    "warnings": [
+      "Hidden surfaces are synthesized. Preserve the original as the geometry evidence."
+    ]
+  },
+  "inputUrl": "https://s3.amazonaws.com/images.cocodataset.org/val2017/000000039769.jpg",
+  "inputSha256": "dea9e7ef97386345f7cff32f9055da4982da5471c48d575146c796ab4563b04e"
+}

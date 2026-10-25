@@ -28,7 +28,8 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageOps
+from io import BytesIO
 
 from app.config import CLAHE_CLIP_LIMIT, CLAHE_TILE_SIZE, MAX_IMAGE_DIM
 
@@ -61,33 +62,20 @@ def decode_base64_image(data_uri: str) -> np.ndarray:
     ValueError
         If the string cannot be decoded into a valid image.
     """
-    # Strip the data-URI prefix if present
-    if "," in data_uri:
-        data_uri = data_uri.split(",", 1)[1]
-
-    # Remove any whitespace / newlines
-    data_uri = re.sub(r"\s+", "", data_uri)
-
+    if not isinstance(data_uri, str) or len(data_uri) > 17_000_000:
+        raise ValueError("Image payload exceeds the 17 MB encoded limit")
+    payload = data_uri.split(",", 1)[-1]
     try:
-        raw_bytes = base64.b64decode(data_uri)
+        raw_bytes = base64.b64decode(re.sub(r"\s+", "", payload), validate=True)
+        with Image.open(BytesIO(raw_bytes)) as source:
+            if source.width * source.height > 20_000_000:
+                raise ValueError("Image exceeds 20 megapixels")
+            # Apply EXIF while the original metadata still exists. Preserve source
+            # dimensions so detection boxes and removal coordinates stay aligned.
+            oriented = ImageOps.exif_transpose(source).convert("RGB")
+            return cv2.cvtColor(np.asarray(oriented), cv2.COLOR_RGB2BGR)
     except Exception as exc:
-        raise ValueError(f"Invalid base64 payload: {exc}") from exc
-
-    arr = np.frombuffer(raw_bytes, dtype=np.uint8)
-    image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError("Could not decode image from provided base64 data")
-
-    # Resize if too large — keeps memory / inference time bounded
-    h, w = image.shape[:2]
-    if max(h, w) > MAX_IMAGE_DIM:
-        scale = MAX_IMAGE_DIM / max(h, w)
-        image = cv2.resize(
-            image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA
-        )
-        logger.debug("Resized image from %dx%d → %dx%d", w, h, image.shape[1], image.shape[0])
-
-    return image
+        raise ValueError(f"Could not decode image: {exc}") from exc
 
 
 def encode_image(image: np.ndarray, fmt: str = "jpeg", quality: int = 85) -> str:
@@ -147,25 +135,8 @@ def normalize_orientation(image: np.ndarray) -> np.ndarray:
     np.ndarray
         BGR image with orientation normalised.
     """
-    # Convert BGR → RGB for Pillow
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    pil_img = Image.fromarray(rgb)
-
-    try:
-        exif = pil_img._getexif()
-        if exif:
-            orientation_key = next(
-                (k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None
-            )
-            if orientation_key and orientation_key in exif:
-                orient = exif[orientation_key]
-                rotations = {3: 180, 6: 270, 8: 90}
-                if orient in rotations:
-                    pil_img = pil_img.rotate(rotations[orient], expand=True)
-    except Exception:
-        pass  # No EXIF or unsupported — return as-is
-
-    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    # Orientation is applied during decode, before metadata is discarded.
+    return image
 
 
 # ---------------------------------------------------------------------------

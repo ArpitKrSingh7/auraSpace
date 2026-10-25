@@ -21,6 +21,10 @@ from __future__ import annotations
 
 import logging
 import time
+import os
+import hashlib
+from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import cv2
@@ -31,7 +35,7 @@ from torchvision.models.detection import (
     maskrcnn_resnet50_fpn_v2,
     MaskRCNN_ResNet50_FPN_V2_Weights,
 )
-from torchvision.ops import nms
+from torchvision.ops import batched_nms
 
 from app.config import (
     COCO_INSTANCE_CATEGORY_NAMES,
@@ -42,6 +46,8 @@ from app.config import (
     NMS_IOU_THRESHOLD,
 )
 from app.schemas import BoundingBox, Detection
+from app.masks import mask_features
+from app.preprocessing import encode_image
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +55,7 @@ logger = logging.getLogger(__name__)
 # Lazy model singleton
 # ---------------------------------------------------------------------------
 _model: torch.nn.Module | None = None
+_model_lock = Lock()
 
 
 def _load_model() -> torch.nn.Module:
@@ -75,7 +82,16 @@ def _load_model() -> torch.nn.Module:
     t0 = time.perf_counter()
 
     weights = MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT
-    model = maskrcnn_resnet50_fpn_v2(weights=weights)
+    checkpoint = os.getenv('MASKRCNN_MODEL_PATH')
+    if checkpoint:
+        path = Path(checkpoint)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if digest != os.getenv('MASKRCNN_MODEL_SHA256'):
+            raise ValueError('Detection checkpoint checksum does not match the pinned manifest')
+        model = maskrcnn_resnet50_fpn_v2(weights=None, weights_backbone=None)
+        model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))
+    else:
+        model = maskrcnn_resnet50_fpn_v2(weights=weights)
     model.eval()
     model.to(DEVICE)
 
@@ -151,10 +167,15 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
     list[Detection]
         Detected furniture items with boxes, masks, and scores.
     """
-    model = _load_model()
+    with _model_lock:
+        model = _load_model()
 
     # ── 1. Pre-process ─────────────────────────────────────────────────
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    source_h, source_w = image.shape[:2]
+    scale = min(1.0, 1024 / max(source_h, source_w))
+    analysis = cv2.resize(image, (max(1, round(source_w*scale)), max(1, round(source_h*scale)))) if scale < 1 else image
+    sx, sy = source_w / analysis.shape[1], source_h / analysis.shape[0]
+    rgb = cv2.cvtColor(analysis, cv2.COLOR_BGR2RGB)
     tensor = transforms.ToTensor()(rgb).to(DEVICE)
 
     # ── 2. Inference ───────────────────────────────────────────────────
@@ -168,7 +189,7 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
     masks: torch.Tensor = outputs["masks"]       # (N, 1, H, W)
 
     # ── 3. Filter by furniture class IDs & score ───────────────────────
-    keep_mask = torch.zeros(len(labels), dtype=torch.bool)
+    keep_mask = torch.zeros(len(labels), dtype=torch.bool, device=labels.device)
     for idx, (lbl, sc) in enumerate(zip(labels, scores)):
         if int(lbl.item()) in FURNITURE_CLASS_IDS and sc.item() >= DETECTION_SCORE_THRESHOLD:
             keep_mask[idx] = True
@@ -187,7 +208,7 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
     # When multiple anchor boxes detect the same object, NMS keeps only the
     # highest-scoring box and discards any box whose IoU with it exceeds the
     # threshold.  This prevents duplicate detections.
-    nms_indices = nms(boxes, scores, NMS_IOU_THRESHOLD)
+    nms_indices = batched_nms(boxes, scores, labels, NMS_IOU_THRESHOLD)
     nms_indices = nms_indices[:MAX_DETECTIONS]
 
     boxes = boxes[nms_indices].cpu().numpy()
@@ -207,10 +228,19 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
 
         # Binarise the soft mask at 0.5 threshold
         binary_mask = (masks[i, 0] > 0.5).astype(np.uint8) * 255
-        polygon = _mask_to_polygon(binary_mask)
-        area = float(np.sum(binary_mask > 0))
-
+        if binary_mask.shape != image.shape[:2]:
+            binary_mask = cv2.resize(binary_mask, (source_w, source_h), interpolation=cv2.INTER_NEAREST)
+        features = mask_features(image, binary_mask)
+        if features is None:
+            continue
+        polygon = _mask_to_polygon(features['cleaned_mask'])
+        area = float(np.sum(features['cleaned_mask'] > 0))
+        thumbnail = features['thumbnail']
+        th, tw = thumbnail.shape[:2]
+        if max(th, tw) > 512:
+            thumbnail = cv2.resize(thumbnail, (max(1, round(tw*512/max(th,tw))), max(1, round(th*512/max(th,tw)))))
         x1, y1, x2, y2 = boxes[i].tolist()
+        x1, x2, y1, y2 = x1*sx, x2*sx, y1*sy, y2*sy
         detections.append(
             Detection(
                 label=label_name,
@@ -219,6 +249,10 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
                 box=BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2),
                 mask_polygon=polygon,
                 area=area,
+                mask_uri=encode_image(features['cleaned_mask'], fmt='png'),
+                raw_mask_uri=encode_image(features['raw_mask'], fmt='png'),
+                thumbnail_uri=encode_image(thumbnail, fmt='png'),
+                color=features['color'], centroid=features['centroid'],
             )
         )
 

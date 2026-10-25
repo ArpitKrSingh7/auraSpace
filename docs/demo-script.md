@@ -1,33 +1,14 @@
-# Teacher Demonstration Script (Step-by-Step)
+# Android preview demo
 
-Follow this 5-minute live demonstration flow during project review:
+1. Install the preview APK and open the example room. Show inside, overview and plan without leaving the shared scene.
+2. Open **Add furniture**, choose a piece, tap the floor, and confirm placement. Drag it; show that details and the tray stay closed.
+3. Open **Details** explicitly. Measure one axis, rotate, and demonstrate a collision warning and undo/redo.
+4. Open **Room photos & extraction**. Import a furnished photo or use the camera. Show a permission-denied/manual path if useful.
+5. Start analysis against the configured local backend. Keep editing while the job runs. Review its result explicitly.
+6. Correct a mask, classify a fixed feature, add a missed item, and link another photo observation to the same physical piece.
+7. Keep movable furniture in the tray. Generate a Big-LaMa removal preview; compare with the unchanged original and explain synthesized hidden surfaces.
+8. Expand optional processing/depth tools. Show raw/clean masks, CLAHE/edges and a depth visualization. Explain that learned metric depth still needs measured validation and the floor-corner proposal is a review placeholder.
+9. Correct floor references and enter known room dimensions. Place an unknown item as a custom box.
+10. Save an alternative, return a piece to the tray, reopen after app restart, then share an SVG, current view and portable project package.
 
-1. **Open the Studio:**
-   - Launch `http://localhost:3000` or open the deployed Vercel link.
-   - Show the Home page with sample projects (**Sunday Living**, **A Slower Morning**) and the **New Room** creator.
-
-2. **Demonstrate 3D Walkthrough & Graphics (CG):**
-   - Click into **Sunday Living**.
-   - Show **Overview Mode**: Left-click and drag to orbit around the room. Point out that the front wall automatically drops to cutaway height so interior items stay visible.
-   - Switch to **Inside Mode**: Point out the eye-level ($1.55\text{m}$) perspective camera. Click on the floor near the sofa to demonstrate walking smoothly through the room.
-   - Switch to **Plan Mode**: Show the orthographic 2D top-down projection and scale grid.
-
-3. **Demonstrate SAT Collision Detection (CG):**
-   - Drag the lounge chair so it intersects the sofa.
-   - Point out the amber warning badge: *"Overlaps Linen sofa"*.
-   - Rotate the chair $45^\circ$ using the inspector button to demonstrate that rotated oriented bounding boxes (OBBs) compute exact collision using the Separating Axis Theorem.
-
-4. **Demonstrate Photo Analysis & Furniture Removal (IP & CV):**
-   - Click the 📷 **Camera** button in the top toolbar.
-   - Click one of the preset sample photos or upload a room picture.
-   - Show the detection bounding boxes with labels and confidence scores.
-   - Click the ✨ **Academic Lab** button to open the full Inspector:
-     - **Tab 1 (Image Processing):** Toggle between Grayscale (BT.601), Contrast Stretch, Sobel/Canny Edges, and **Furniture Removal (Inpainting)** using the interactive split slider.
-     - **Tab 2 (Computer Vision):** View bounding boxes, confidence logits, and depth estimation cues.
-     - **Tab 3 (Computer Graphics):** View the Separating Axis Theorem formulas, raycasting unprojection math, and projection matrix derivations.
-
-5. **Demonstrate Custom Proxy Box & Export:**
-   - Open the bottom furniture tray and click **Add Custom Object**.
-   - Enter a custom name (e.g. *"Floor Bookshelf"*), dimensions ($1.2\text{m} \times 0.4\text{m} \times 1.8\text{m}$), and color.
-   - Place it into the room and verify that collision warnings apply to custom proxies.
-   - Click the **Download** icon in the toolbar and click **Project File (.json)** to download the exported layout.
+Use the exact recorded smoke reports for model/runtime evidence. Do not present these as detection accuracy, independent dimension error, or physical-phone frame-rate measurements. Device scanning, accurate automatic reconstruction and a measured user study are not demonstrated by this preview.

@@ -5,7 +5,12 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Vector3 } from 'three';
 import type { SceneProps } from '@/domain/types';
-import { SceneWorld, useSceneCamera, canWalkTo } from './SceneWorld';
+import {
+  SceneWorld,
+  useSceneCamera,
+  canWalkTo,
+  clearWalkPath,
+} from './SceneWorld';
 
 function CameraManager({
   mode,
@@ -21,16 +26,32 @@ function CameraManager({
   onWalkFinished: () => void;
 }) {
   const camera = useSceneCamera(mode, room, items);
+  const { invalidate } = useThree();
+  useEffect(() => {
+    if (walkingTarget) invalidate();
+  }, [walkingTarget, invalidate]);
   const targetVec = useRef(new Vector3());
 
   useFrame((_, delta) => {
     if (mode === 'inside' && walkingTarget) {
+      if (
+        !clearWalkPath(
+          { x: camera.position.x, z: camera.position.z },
+          walkingTarget,
+          room,
+          items,
+        )
+      ) {
+        onWalkFinished();
+        return;
+      }
       const eyeY = Math.min(1.55, room.height * 0.7);
       targetVec.current.set(walkingTarget.x, eyeY, walkingTarget.z);
       const currentPos = camera.position;
       const dist = currentPos.distanceTo(targetVec.current);
       if (dist > 0.05) {
         currentPos.lerp(targetVec.current, Math.min(1, delta * 6.5));
+        invalidate();
       } else {
         currentPos.copy(targetVec.current);
         onWalkFinished();
@@ -41,11 +62,50 @@ function CameraManager({
   return null;
 }
 
+function InsideLook({ enabled }: { enabled: boolean }) {
+  const { camera, gl, invalidate } = useThree();
+  useEffect(() => {
+    if (!enabled) return;
+    let pointer: { x: number; y: number } | null = null;
+    const down = (e: PointerEvent) => {
+      if (e.button === 0) pointer = { x: e.clientX, y: e.clientY };
+    };
+    const move = (e: PointerEvent) => {
+      if (!pointer) return;
+      camera.rotation.order = 'YXZ';
+      camera.rotation.y -= (e.clientX - pointer.x) * 0.004;
+      camera.rotation.x = Math.max(
+        -1.1,
+        Math.min(1.1, camera.rotation.x - (e.clientY - pointer.y) * 0.004),
+      );
+      pointer = { x: e.clientX, y: e.clientY };
+      invalidate();
+    };
+    const up = () => {
+      pointer = null;
+    };
+    gl.domElement.addEventListener('pointerdown', down);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      gl.domElement.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, [enabled, camera, gl, invalidate]);
+  return null;
+}
+
 export default function SceneCanvas(props: SceneProps) {
   const { project, mode, placing } = props;
   const room = project.room;
   const [isInteracting, setIsInteracting] = useState(false);
-  const [walkingTarget, setWalkingTarget] = useState<{ x: number; z: number } | null>(null);
+  const [walkingTarget, setWalkingTarget] = useState<{
+    x: number;
+    z: number;
+  } | null>(null);
   const controlsRef = useRef<any>(null);
 
   const handleWalk = useCallback(
@@ -54,7 +114,7 @@ export default function SceneCanvas(props: SceneProps) {
       if (!canWalkTo(targetX, targetZ, room, project.items)) return;
       setWalkingTarget({ x: targetX, z: targetZ });
     },
-    [mode, room, project.items]
+    [mode, room, project.items],
   );
 
   // Reset orbit target when room dimensions or view mode changes
@@ -70,6 +130,7 @@ export default function SceneCanvas(props: SceneProps) {
   return (
     <div className="w-full h-full relative select-none">
       <Canvas
+        frameloop="demand"
         shadows
         gl={{
           antialias: true,
@@ -77,7 +138,7 @@ export default function SceneCanvas(props: SceneProps) {
           preserveDrawingBuffer: true,
           powerPreference: 'high-performance',
         }}
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         className="w-full h-full"
       >
         <CameraManager
@@ -87,6 +148,10 @@ export default function SceneCanvas(props: SceneProps) {
           walkingTarget={walkingTarget}
           onWalkFinished={() => setWalkingTarget(null)}
         />
+
+        {mode === 'inside' && (
+          <InsideLook enabled={!isInteracting && !placing && !walkingTarget} />
+        )}
 
         {mode === 'overview' && (
           <OrbitControls
@@ -108,13 +173,12 @@ export default function SceneCanvas(props: SceneProps) {
         />
       </Canvas>
 
-      {/* Mode Hint Overlay */}
-      <div className="absolute top-3 left-3 pointer-events-none">
-        <div className="bg-white/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-surface-200/60 shadow-sm text-[11px] text-surface-600 font-medium">
-          {mode === 'inside' && '👀 Inside View · Tap anywhere on the floor to walk'}
-          {mode === 'overview' && '🔄 Overview 3D · Drag to orbit · Scroll to zoom'}
-          {mode === 'plan' && '📐 2D Top-Down Plan · Orthographic projection'}
-        </div>
+      <div className="pointer-events-none absolute bottom-3 right-4 hidden text-[10px] text-surface-500 sm:block">
+        {mode === 'inside'
+          ? 'Drag to look · Tap the floor to walk'
+          : mode === 'overview'
+            ? 'Drag to orbit · Scroll to zoom'
+            : 'Select and drag a piece to arrange'}
       </div>
     </div>
   );

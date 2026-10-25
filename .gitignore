@@ -20,8 +20,7 @@ ENV/
 .venv/
 
 # Environment variables
-.env*.local
-.env
+.env*
 
 # Debug logs
 npm-debug.log*
@@ -32,3 +31,16 @@ pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local build tooling, media and generated Android output
+.artifacts/
+artifacts/
+apps/mobile/.expo/
+apps/mobile/android/.gradle/
+apps/mobile/android/.cxx/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/local.properties
+apps/mobile/android/app/debug.keystore
+apps/mobile/dist/
+*.tsbuildinfo

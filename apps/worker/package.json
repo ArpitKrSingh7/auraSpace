@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "name": "@auraspace/worker",
+  "scripts": {
+    "dev": "node --env-file=../../.env --import tsx --watch src/index.ts",
+    "start": "node --env-file=../../.env --import tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@auraspace/backend": "workspace:*",
+    "@auraspace/contracts": "workspace:*",
+    "@auraspace/scene-domain": "workspace:*",
+    "tsx": "^4.20.0"
+  }
+}

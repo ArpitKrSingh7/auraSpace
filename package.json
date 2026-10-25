@@ -3,33 +3,49 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "test": "node --test tests/geometry.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "start": "next start --port 3000",
+    "lint": "tsc --noEmit",
+    "test": "node --import ./tests/register.mjs --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev:android": "pnpm --filter @auraspace/mobile start",
+    "dev:api": "node --env-file=.env --import tsx --watch apps/api/src/index.ts",
+    "dev:worker": "node --env-file=.env --import tsx --watch apps/worker/src/index.ts",
+    "typecheck:all": "pnpm typecheck && pnpm -r --if-present typecheck",
+    "db:generate": "prisma generate --schema apps/api/prisma/schema.prisma",
+    "db:migrate": "node --env-file=.env node_modules/prisma/build/index.js migrate deploy --schema apps/api/prisma/schema.prisma",
+    "test:domain": "node --import ./tests/register.mjs --test tests/*.test.mjs",
+    "check:env": "node --env-file=.env --import tsx scripts/check-env.ts",
+    "verify:storage": "node --env-file=.env --import tsx scripts/verify-storage.ts"
   },
   "dependencies": {
+    "@react-three/drei": "^9.88.0",
+    "@react-three/fiber": "^8.15.0",
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.15.0",
+    "lucide-react": "^0.300.0",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "@react-three/fiber": "^8.15.0",
-    "@react-three/drei": "^9.88.0",
     "three": "^0.160.0",
-    "zustand": "^4.5.0",
     "zod": "^3.22.0",
-    "lucide-react": "^0.300.0",
-    "@tensorflow/tfjs": "^4.15.0",
-    "@tensorflow-models/coco-ssd": "^2.2.3"
+    "zustand": "^4.5.0",
+    "@auraspace/scene-domain": "workspace:*",
+    "@auraspace/contracts": "workspace:*",
+    "@auraspace/scene-assets": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "26.6.5",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@types/three": "^0.160.0",
-    "typescript": "^5.3.0",
-    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.0",
     "postcss": "^8.4.0",
-    "autoprefixer": "^10.4.0"
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.0",
+    "tsx": "^4.20.0",
+    "prisma": "6.19.0",
+    "@prisma/client": "6.19.0"
   }
 }

@@ -1,37 +1,25 @@
 #!/usr/bin/env python3
-"""
-Model Weights Downloader
-=========================
-Downloads and caches pretrained PyTorch Mask R-CNN and Depth estimation models
-so the vision service can operate offline and quickly in containerized environments.
-"""
-
-import sys
-import logging
-import torch
-from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResNet50_FPN_V2_Weights
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("download_models")
-
-def download_mask_rcnn():
-    logger.info("Downloading Mask R-CNN ResNet-50 FPN v2 weights...")
-    weights = MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT
-    model = maskrcnn_resnet50_fpn_v2(weights=weights)
-    model.eval()
-    logger.info("✓ Mask R-CNN weights verified and cached.")
-
-def download_depth_model():
-    logger.info("Downloading MiDaS / Depth model...")
-    try:
-        model = torch.hub.load("intel-isl/MiDaS", "MiDaS_small", pretrained=True)
-        model.eval()
-        logger.info("✓ MiDaS small depth model cached.")
-    except Exception as e:
-        logger.warning(f"Depth model download optional or offline fallback active: {e}")
-
-if __name__ == "__main__":
-    logger.info("Starting model asset caching...")
-    download_mask_rcnn()
-    download_depth_model()
-    logger.info("All model download tasks completed.")
+"""Download exact, checksum-verified model assets. No remote code execution."""
+import argparse,hashlib,json,os,urllib.request
+from pathlib import Path
+manifest=Path(__file__).resolve().parents[1]/'model-manifest.json'
+def main():
+ parser=argparse.ArgumentParser();parser.add_argument('--include-depth',action='store_true');parser.add_argument('--output',type=Path,default=Path('.artifacts/models'));args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+ description=json.loads(manifest.read_text());models=list(description['models'])
+ if args.include_depth:
+  depth=description['metricDepth'];(args.output/depth['directory']).mkdir(exist_ok=True)
+  models.extend({'name':depth['name']+' '+f['name'],'file':depth['directory']+'/'+f['name'],'url':f['url'],'sha256':f['sha256']} for f in depth['files'])
+ for model in models:
+  path=args.output/model['file']
+  if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest()==model['sha256']:
+   print('Verified',path);continue
+  temporary=path.with_suffix(path.suffix+'.download')
+  try:
+   print('Downloading',model['name'],flush=True)
+   with urllib.request.urlopen(model['url'],timeout=120) as response,temporary.open('wb') as output:
+    while chunk:=response.read(1024*1024):output.write(chunk)
+   if hashlib.sha256(temporary.read_bytes()).hexdigest()!=model['sha256']:raise ValueError('Checkpoint checksum mismatch: '+model['file'])
+   os.replace(temporary,path)
+  finally:
+   temporary.unlink(missing_ok=True)
+if __name__=='__main__':main()

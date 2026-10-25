@@ -1,0 +1,12 @@
+{
+  "model": "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf@8078d68a9c75a972131914f6afd0c1723be0da7f",
+  "units": "meters",
+  "min": 1.1574510335922241,
+  "max": 1.8248612880706787,
+  "shape": [
+    480,
+    640
+  ],
+  "elapsedSeconds": 7.398215171999254,
+  "accuracy": "not_evaluated"
+}

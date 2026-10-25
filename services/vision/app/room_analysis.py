@@ -90,7 +90,7 @@ def estimate_room_boundaries(
 
     if lines_raw is not None:
         for line in lines_raw:
-            x1, y1, x2, y2 = line[0]
+            x1, y1, x2, y2 = [int(value) for value in line[0]]
             all_lines.append([x1, y1, x2, y2])
 
             angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)))
@@ -226,8 +226,8 @@ def _line_intersection(
 
     Uses the cross-product formula for line-line intersection.
     """
-    x1, y1, x2, y2 = seg1
-    x3, y3, x4, y4 = seg2
+    x1, y1, x2, y2 = [float(value) for value in seg1]
+    x3, y3, x4, y4 = [float(value) for value in seg2]
 
     denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
     if abs(denom) < 1e-8:

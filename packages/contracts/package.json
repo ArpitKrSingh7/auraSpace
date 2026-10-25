@@ -1,0 +1,13 @@
+{
+  "name": "@auraspace/contracts",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@auraspace/scene-domain": "workspace:*",
+    "zod": "^3.22.0"
+  }
+}

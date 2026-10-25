@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+**/.env*
+.deprecated
+services/vision/.venv
+**/__pycache__
+*.tsbuildinfo
+.artifacts
+artifacts
+**/node_modules
+**/.expo
+**/.gradle
+**/.cxx
+apps/mobile/android
+apps/mobile/dist

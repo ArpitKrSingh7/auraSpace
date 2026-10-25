@@ -10,7 +10,7 @@
   --color-surface-warm: #f5f0ea;
   --color-surface-muted: #ede7de;
   --color-surface-dim: #ddd5c9;
-  --color-accent: #C9977D;
+  --color-accent: #c9977d;
   --color-accent-light: #dbb5a0;
   --color-text: #2c2c2c;
   --color-text-secondary: #6b6560;
@@ -30,8 +30,16 @@
   }
 
   html {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-      Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+    font-family:
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      'Helvetica Neue',
+      Arial,
+      'Noto Sans',
+      sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -39,17 +47,18 @@
   body {
     @apply bg-surface text-text;
     overscroll-behavior: none;
-    overflow: hidden;
-    position: fixed;
+    overflow-x: hidden;
     width: 100%;
-    height: 100%;
+    min-height: 100%;
   }
 
   #__next {
     height: 100%;
   }
 
-  input, textarea, select {
+  input,
+  textarea,
+  select {
     @apply text-text;
     font-size: 16px;
   }
@@ -82,7 +91,11 @@
   }
 
   .toolbar-gradient {
-    background: linear-gradient(180deg, rgba(44, 44, 44, 0.92) 0%, rgba(44, 44, 44, 0.88) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(44, 44, 44, 0.92) 0%,
+      rgba(44, 44, 44, 0.88) 100%
+    );
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
   }
@@ -114,4 +127,86 @@
   .safe-top {
     padding-top: env(safe-area-inset-top, 0px);
   }
+}
+
+@layer base {
+  button,
+  a,
+  input,
+  select {
+    touch-action: manipulation;
+  }
+  button {
+    @apply disabled:cursor-not-allowed;
+  }
+  :focus-visible {
+    outline: 3px solid #8db5a5;
+    outline-offset: 3px;
+  }
+  ::selection {
+    background: #dce8e3;
+    color: #293f3a;
+  }
+}
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-600 disabled:opacity-40;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-surface-200 bg-white px-4 py-3 text-sm font-medium text-surface-700 transition-colors hover:bg-surface-100 disabled:opacity-40;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-surface-100 disabled:opacity-40;
+  }
+  .input-field {
+    @apply w-full min-w-0 rounded-xl border border-surface-200 bg-white px-3 py-2.5 text-sm outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+  }
+  .label {
+    @apply text-xs font-medium text-surface-600;
+  }
+  .card {
+    @apply rounded-2xl border border-surface-200 bg-white shadow-sm;
+  }
+  .badge-success {
+    @apply inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-1 text-xs font-medium text-brand-600;
+  }
+  .badge-warning {
+    @apply inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800;
+  }
+  .bottom-sheet {
+    @apply absolute bottom-0 left-0 right-0 z-30 border-t border-surface-200 bg-white shadow-elevated rounded-t-3xl;
+  }
+  .editor-viewport {
+    min-height: 0;
+  }
+  .studio-heading {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-weight: 400;
+    letter-spacing: -0.045em;
+  }
+  .studio-nav {
+    @apply flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm text-surface-600 transition-colors hover:bg-surface-100;
+  }
+  .studio-nav-active {
+    @apply bg-brand-50 text-brand-600 font-semibold;
+  }
+  .studio-grid {
+    background-image: radial-gradient(#c7cec2 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+[data-reduce-motion='true'] *,
+[data-reduce-motion='true'] *::before,
+[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
 }

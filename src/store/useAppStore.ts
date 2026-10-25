@@ -10,7 +10,7 @@ import type {
   Settings,
   ViewMode,
   LayoutSnapshot,
-} from '@/domain/types';
+} from '../domain/types';
 import {
   CATALOG,
   DEFAULT_SETTINGS,
@@ -18,13 +18,19 @@ import {
   makeItem,
   makeProject,
   newId,
-} from '@/domain/catalog';
+} from '../domain/catalog';
 import {
   getProjectWarnings,
   normalizeRotation,
   snapPosition,
   type ProjectWarning,
-} from '@/domain/geometry';
+} from '../domain/geometry';
+import {
+  validateItem,
+  validateProject,
+  validateRoom,
+  validateSettings,
+} from '../domain/validation';
 
 export interface Toast {
   id: string;
@@ -76,7 +82,13 @@ export interface AppState {
   warnings: () => ProjectWarning[];
 
   /* Project actions */
-  createProject: (name: string, width: number, depth: number, height: number) => string;
+  importProject: (project: Project) => string;
+  createProject: (
+    name: string,
+    width: number,
+    depth: number,
+    height: number,
+  ) => string;
   openProject: (id: string) => void;
   loadProject: (id: string) => void; // alias for openProject
   deleteProject: (id: string) => void;
@@ -89,11 +101,22 @@ export interface AppState {
 
   /* Item actions */
   addItem: (type: FurnitureType, overrides?: Partial<FurnitureItem>) => void;
-  addCustomItem: (name: string, width: number, depth: number, height: number, color: string) => void;
+  addCustomItem: (
+    name: string,
+    width: number,
+    depth: number,
+    height: number,
+    color: string,
+  ) => void;
   removeItem: (id: string) => void;
   moveItem: (id: string, x: number, z: number) => void;
   rotateItem: (id: string, degrees: number) => void;
-  resizeItem: (id: string, width: number, depth: number, height: number) => void;
+  resizeItem: (
+    id: string,
+    width: number,
+    depth: number,
+    height: number,
+  ) => void;
   recolorItem: (id: string, color: string) => void;
   updateItem: (id: string, updates: Partial<FurnitureItem>) => void;
   lockItem: (id: string) => void;
@@ -143,6 +166,11 @@ export interface AppState {
 
   /* Photos */
   addPhoto: (photo: Photo) => void;
+  updatePhotoInProject: (
+    projectId: string,
+    photoId: string,
+    updates: Partial<Photo>,
+  ) => void;
   updatePhoto: (id: string, updates: Partial<Photo>) => void;
   removePhoto: (id: string) => void;
   addDetectionAsItem: (photoId: string, detectionId: string) => void;
@@ -158,47 +186,112 @@ const STORAGE_KEY = 'auraspace-studio';
 function getStoredState(): { projects?: Project[]; settings?: Settings } {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('morrow-room-studio');
+    const raw =
+      localStorage.getItem(STORAGE_KEY) ||
+      localStorage.getItem('morrow-room-studio');
     if (!raw) return {};
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      projects: Array.isArray(parsed.projects)
+        ? parsed.projects.map(validateProject).map((p: Project) => ({
+            ...p,
+            photos: p.photos.map((ph) =>
+              ph.analysisStatus === 'running'
+                ? {
+                    ...ph,
+                    analysisStatus: 'failed' as const,
+                    analysisMessage:
+                      'Analysis was interrupted. Import the photo again to retry.',
+                  }
+                : ph,
+            ),
+          }))
+        : undefined,
+      settings: parsed.settings
+        ? validateSettings({
+            ...parsed.settings,
+            displayName:
+              parsed.settings.displayName?.trim() ||
+              DEFAULT_SETTINGS.displayName,
+          })
+        : undefined,
+    };
   } catch {
     return {};
   }
 }
 
-function persistState(projects: Project[], settings: Settings) {
-  if (typeof window === 'undefined') return;
+function persistState(projects: Project[], settings: Settings): boolean {
+  if (typeof window === 'undefined') return true;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ projects, settings }));
+    return true;
   } catch (err) {
     console.error('Failed to save to localStorage:', err);
+    return false;
   }
 }
 
 export const useAppStore = create<AppState>((set, get) => {
   const initialData = getStoredState();
-  const initialProjects: Project[] =
-    initialData.projects && initialData.projects.length > 0
-      ? initialData.projects
-      : createSampleProjects();
+  const initialProjects: Project[] = initialData.projects
+    ? initialData.projects
+    : createSampleProjects();
 
   const getActive = (): Project | null => {
     const state = get();
     return state.projects.find((p) => p.id === state.activeProjectId) ?? null;
   };
 
+  let pendingHistory: string | null = null;
+  let storageFailed = false;
+  const save = (projects: Project[], settings: Settings) => {
+    const ok = persistState(projects, settings);
+    if (!ok && !storageFailed)
+      get().addToast(
+        'Device storage is full or unavailable. Export your project to keep these changes.',
+        'error',
+      );
+    storageFailed = !ok;
+    return ok;
+  };
+
   const updateActive = (updater: (project: Project) => Partial<Project>) => {
     const current = getActive();
-    if (!current) return;
+    if (!current) {
+      pendingHistory = null;
+      return;
+    }
     const updates = updater(current);
     const updated: Project = {
       ...current,
       ...updates,
       updatedAt: new Date().toISOString(),
     };
-    const nextProjects = get().projects.map((p) => (p.id === updated.id ? updated : p));
-    set({ projects: nextProjects });
-    persistState(nextProjects, get().settings);
+    const nextProjects = get().projects.map((p) =>
+      p.id === updated.id ? updated : p,
+    );
+    if (pendingHistory !== null) {
+      const history = get().history.slice(0, get().historyIndex + 1);
+      if (!history.length)
+        history.push({
+          items: structuredClone(current.items),
+          room: structuredClone(current.room),
+        });
+      history.push({
+        items: structuredClone(updated.items),
+        room: structuredClone(updated.room),
+        label: pendingHistory,
+      });
+      if (history.length > 51) history.shift();
+      set({
+        projects: nextProjects,
+        history,
+        historyIndex: history.length - 1,
+      });
+      pendingHistory = null;
+    } else set({ projects: nextProjects });
+    save(nextProjects, get().settings);
   };
 
   return {
@@ -210,8 +303,8 @@ export const useAppStore = create<AppState>((set, get) => {
     selectedId: null,
     placingItem: null,
     placingType: null,
-    showGrid: true,
-    snap: true,
+    showGrid: initialData.settings?.showGrid ?? true,
+    snap: initialData.settings?.snap ?? true,
     history: [],
     historyIndex: -1,
     settings: { ...DEFAULT_SETTINGS, ...(initialData.settings || {}) },
@@ -233,8 +326,19 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     /* ── Project actions ── */
+    importProject: (input) => {
+      const project = validateProject(input);
+      project.id = newId('room');
+      project.sample = false;
+      project.updatedAt = new Date().toISOString();
+      const next = [project, ...get().projects];
+      set({ projects: next });
+      save(next, get().settings);
+      return project.id;
+    },
+
     createProject: (name, width, depth, height) => {
-      const project = makeProject(name, width, depth, height);
+      const project = validateProject(makeProject(name, width, depth, height));
       const next = [project, ...get().projects];
       set({
         projects: next,
@@ -247,21 +351,29 @@ export const useAppStore = create<AppState>((set, get) => {
         history: [{ items: [], room: project.room }],
         historyIndex: 0,
       });
-      persistState(next, get().settings);
+      save(next, get().settings);
       return project.id;
     },
 
     openProject: (id) => {
       const p = get().projects.find((item) => item.id === id);
       if (!p) return;
+      pendingHistory = null;
       set({
         activeProjectId: id,
+        trayOpen: false,
+        bottomSheetOpen: false,
         viewMode: 'overview',
         selectedItemId: null,
         selectedId: null,
         placingItem: null,
         placingType: null,
-        history: [{ items: JSON.parse(JSON.stringify(p.items)), room: JSON.parse(JSON.stringify(p.room)) }],
+        history: [
+          {
+            items: JSON.parse(JSON.stringify(p.items)),
+            room: JSON.parse(JSON.stringify(p.room)),
+          },
+        ],
         historyIndex: 0,
       });
     },
@@ -272,9 +384,12 @@ export const useAppStore = create<AppState>((set, get) => {
       const next = get().projects.filter((p) => p.id !== id);
       set({
         projects: next,
-        activeProjectId: get().activeProjectId === id ? (next[0]?.id ?? null) : get().activeProjectId,
+        activeProjectId:
+          get().activeProjectId === id
+            ? (next[0]?.id ?? null)
+            : get().activeProjectId,
       });
-      persistState(next, get().settings);
+      save(next, get().settings);
     },
 
     duplicateProject: (id) => {
@@ -290,30 +405,56 @@ export const useAppStore = create<AppState>((set, get) => {
       };
       const next = [copy, ...get().projects];
       set({ projects: next });
-      persistState(next, get().settings);
+      save(next, get().settings);
     },
 
     toggleFavorite: (id) => {
-      const next = get().projects.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p));
+      const next = get().projects.map((p) =>
+        p.id === id ? { ...p, favorite: !p.favorite } : p,
+      );
       set({ projects: next });
-      persistState(next, get().settings);
+      save(next, get().settings);
     },
 
     updateProjectName: (name) => {
-      updateActive(() => ({ name }));
+      updateActive(() => ({
+        name: name.trim().slice(0, 100) || 'Untitled room',
+      }));
     },
 
     updateRoom: (roomUpdates) => {
+      const p = getActive();
+      if (!p) return;
+      const proposed = { ...p.room, ...roomUpdates };
+      const wallLength =
+        proposed.door.wall === 'front' || proposed.door.wall === 'back'
+          ? proposed.width
+          : proposed.depth;
+      proposed.door = {
+        ...proposed.door,
+        width: Math.min(proposed.door.width, wallLength),
+        offset: Math.max(
+          0,
+          Math.min(
+            proposed.door.offset,
+            wallLength - Math.min(proposed.door.width, wallLength),
+          ),
+        ),
+      };
+      try {
+        validateRoom(proposed);
+      } catch (error) {
+        get().addToast((error as Error).message, 'error');
+        return;
+      }
       get().pushHistory('Update room');
-      updateActive((p) => ({
-        room: { ...p.room, ...roomUpdates },
-      }));
+      updateActive(() => ({ room: proposed }));
     },
 
     /* ── Item actions ── */
     addItem: (type, overrides = {}) => {
+      const item = validateItem(makeItem(type, overrides));
       get().pushHistory(`Add ${type}`);
-      const item = makeItem(type, overrides);
       updateActive((p) => ({
         items: [...p.items, item],
       }));
@@ -321,9 +462,21 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     addCustomItem: (name, width, depth, height, color) => {
+      if (
+        !name.trim() ||
+        ![width, depth, height].every(
+          (v) => Number.isFinite(v) && v >= 0.01 && v <= 12,
+        )
+      ) {
+        get().addToast(
+          'Enter a name and dimensions between 0.01 and 12 meters.',
+          'error',
+        );
+        return;
+      }
       get().pushHistory('Add custom object');
       const item = makeItem('custom', {
-        name,
+        name: name.trim().slice(0, 100),
         width,
         depth,
         height,
@@ -348,6 +501,12 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     moveItem: (id, x, z) => {
+      if (
+        ![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100) ||
+        getActive()?.items.find((i) => i.id === id)?.locked
+      )
+        return;
+      get().pushHistory('Move item');
       const snap = get().snap;
       updateActive((p) => ({
         items: p.items.map((item) =>
@@ -358,52 +517,93 @@ export const useAppStore = create<AppState>((set, get) => {
                 z: snapPosition(z, snap),
                 placed: true,
               }
-            : item
+            : item,
         ),
       }));
     },
 
     rotateItem: (id, degrees) => {
+      if (
+        !Number.isFinite(degrees) ||
+        getActive()?.items.find((i) => i.id === id)?.locked
+      )
+        return;
       get().pushHistory('Rotate item');
       updateActive((p) => ({
         items: p.items.map((item) =>
           item.id === id
             ? { ...item, rotation: normalizeRotation(item.rotation + degrees) }
-            : item
+            : item,
         ),
       }));
     },
 
     resizeItem: (id, width, depth, height) => {
+      if (
+        ![width, depth, height].every(
+          (v) => Number.isFinite(v) && v >= 0.01 && v <= 12,
+        ) ||
+        getActive()?.items.find((i) => i.id === id)?.locked
+      )
+        return;
       get().pushHistory('Resize item');
       updateActive((p) => ({
         items: p.items.map((item) =>
-          item.id === id ? { ...item, width, depth, height, source: 'measured' as const } : item
+          item.id === id
+            ? { ...item, width, depth, height, source: 'measured' as const }
+            : item,
         ),
       }));
     },
 
     recolorItem: (id, color) => {
+      if (!/^#[a-f0-9]{6}$/i.test(color)) return;
+      get().pushHistory('Change color');
       updateActive((p) => ({
-        items: p.items.map((item) => (item.id === id ? { ...item, color } : item)),
+        items: p.items.map((item) =>
+          item.id === id ? { ...item, color } : item,
+        ),
       }));
     },
 
     updateItem: (id, updates) => {
+      const item = getActive()?.items.find((i) => i.id === id);
+      if (!item) return;
+      if (
+        item.locked &&
+        ['x', 'z', 'rotation', 'width', 'depth', 'height', 'placed'].some(
+          (k) => k in updates,
+        )
+      )
+        return;
+      try {
+        updates = validateItem({ ...item, ...updates, id });
+      } catch {
+        return;
+      }
+      get().pushHistory('Edit item');
       updateActive((p) => ({
-        items: p.items.map((item) => (item.id === id ? { ...item, ...updates } : item)),
+        items: p.items.map((item) =>
+          item.id === id ? { ...item, ...updates } : item,
+        ),
       }));
     },
 
     lockItem: (id) => {
+      get().pushHistory('Lock item');
       updateActive((p) => ({
-        items: p.items.map((item) => (item.id === id ? { ...item, locked: true } : item)),
+        items: p.items.map((item) =>
+          item.id === id ? { ...item, locked: true } : item,
+        ),
       }));
     },
 
     unlockItem: (id) => {
+      get().pushHistory('Unlock item');
       updateActive((p) => ({
-        items: p.items.map((item) => (item.id === id ? { ...item, locked: false } : item)),
+        items: p.items.map((item) =>
+          item.id === id ? { ...item, locked: false } : item,
+        ),
       }));
     },
 
@@ -428,10 +628,11 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     returnToTray: (id) => {
+      if (getActive()?.items.find((i) => i.id === id)?.locked) return;
       get().pushHistory('Return to tray');
       updateActive((p) => ({
         items: p.items.map((item) =>
-          item.id === id ? { ...item, placed: false, x: 0, z: 0 } : item
+          item.id === id ? { ...item, placed: false, x: 0, z: 0 } : item,
         ),
       }));
       set((s) => ({
@@ -441,6 +642,11 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     placeFromTray: (id, x, z) => {
+      if (
+        ![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100) ||
+        getActive()?.items.find((i) => i.id === id)?.locked
+      )
+        return;
       get().pushHistory('Place from tray');
       const snap = get().snap;
       updateActive((p) => ({
@@ -452,7 +658,7 @@ export const useAppStore = create<AppState>((set, get) => {
                 x: snapPosition(x, snap),
                 z: snapPosition(z, snap),
               }
-            : item
+            : item,
         ),
       }));
     },
@@ -491,6 +697,10 @@ export const useAppStore = create<AppState>((set, get) => {
       const placing = get().placingItem;
       if (!placing) return;
       get().pushHistory('Place furniture');
+      if (![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100)) {
+        pendingHistory = null;
+        return;
+      }
       const snap = get().snap;
       const item: FurnitureItem = {
         ...placing,
@@ -499,7 +709,9 @@ export const useAppStore = create<AppState>((set, get) => {
         z: snapPosition(z, snap),
       };
       updateActive((p) => ({
-        items: [...p.items, item],
+        items: p.items.some((i) => i.id === item.id)
+          ? p.items.map((i) => (i.id === item.id ? item : i))
+          : [...p.items, item],
       }));
       set({
         placingItem: null,
@@ -518,25 +730,14 @@ export const useAppStore = create<AppState>((set, get) => {
     select: (id) => set({ selectedItemId: id, selectedId: id }),
 
     /* ── View ── */
-    setViewMode: (mode) => set({ viewMode: mode, selectedItemId: null, selectedId: null }),
+    setViewMode: (mode) =>
+      set({ viewMode: mode, selectedItemId: null, selectedId: null }),
     toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
     toggleSnap: () => set((s) => ({ snap: !s.snap })),
 
     /* ── History ── */
     pushHistory: (label) => {
-      const project = getActive();
-      if (!project) return;
-      const entry: HistoryEntry = {
-        items: JSON.parse(JSON.stringify(project.items)),
-        room: JSON.parse(JSON.stringify(project.room)),
-        label,
-      };
-      const trimmed = get().history.slice(0, get().historyIndex + 1);
-      const capped = trimmed.length >= 50 ? trimmed.slice(1) : trimmed;
-      set({
-        history: [...capped, entry],
-        historyIndex: capped.length,
-      });
+      pendingHistory = label ?? 'Edit room';
     },
 
     undo: () => {
@@ -567,6 +768,11 @@ export const useAppStore = create<AppState>((set, get) => {
 
     /* ── Layouts ── */
     saveLayout: (name) => {
+      if ((getActive()?.layouts.length ?? 0) >= 30) {
+        get().addToast('A room can hold up to 30 saved layouts.', 'warning');
+        return;
+      }
+      name = name.trim().slice(0, 100) || 'Untitled layout';
       updateActive((p) => ({
         layouts: [
           ...p.layouts,
@@ -593,8 +799,14 @@ export const useAppStore = create<AppState>((set, get) => {
     /* ── Settings ── */
     updateSettings: (updates) => {
       const nextSettings = { ...get().settings, ...updates };
-      set({ settings: nextSettings });
-      persistState(get().projects, nextSettings);
+      set({
+        settings: nextSettings,
+        ...(updates.snap !== undefined ? { snap: updates.snap } : {}),
+        ...(updates.showGrid !== undefined
+          ? { showGrid: updates.showGrid }
+          : {}),
+      });
+      save(get().projects, nextSettings);
     },
 
     /* ── UI ── */
@@ -612,14 +824,20 @@ export const useAppStore = create<AppState>((set, get) => {
     setPhotoAnalysisOpen: (open) => set({ photoAnalysisOpen: open }),
 
     addToast: (message, type = 'info') => {
-      const toast: Toast = { id: newId('toast'), message, type, duration: 3000 };
+      const toast: Toast = {
+        id: newId('toast'),
+        message,
+        type,
+        duration: 3000,
+      };
       set((s) => ({ toasts: [...s.toasts, toast] }));
       setTimeout(() => {
         set((s) => ({ toasts: s.toasts.filter((t) => t.id !== toast.id) }));
       }, toast.duration || 3000);
     },
 
-    removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+    removeToast: (id) =>
+      set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
     /* ── Photos ── */
     addPhoto: (photo) => {
@@ -628,15 +846,56 @@ export const useAppStore = create<AppState>((set, get) => {
       }));
     },
 
+    updatePhotoInProject: (projectId, photoId, updates) => {
+      const next = get().projects.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              updatedAt: new Date().toISOString(),
+              photos: p.photos.map((ph) =>
+                ph.id === photoId ? { ...ph, ...updates } : ph,
+              ),
+            }
+          : p,
+      );
+      set({ projects: next });
+      save(next, get().settings);
+    },
+
     updatePhoto: (id, updates) => {
       updateActive((p) => ({
-        photos: p.photos.map((ph) => (ph.id === id ? { ...ph, ...updates } : ph)),
+        photos: p.photos.map((ph) =>
+          ph.id === id ? { ...ph, ...updates } : ph,
+        ),
       }));
     },
 
     removePhoto: (id) => {
+      set({
+        history: get().history.map((h) => ({
+          ...h,
+          items: h.items.map((i) =>
+            i.photoId === id
+              ? { ...i, photoId: undefined, detectionId: undefined }
+              : i,
+          ),
+        })),
+      });
       updateActive((p) => ({
         photos: p.photos.filter((ph) => ph.id !== id),
+        items: p.items.map((i) =>
+          i.photoId === id
+            ? { ...i, photoId: undefined, detectionId: undefined }
+            : i,
+        ),
+        layouts: p.layouts.map((l) => ({
+          ...l,
+          items: l.items.map((i) =>
+            i.photoId === id
+              ? { ...i, photoId: undefined, detectionId: undefined }
+              : i,
+          ),
+        })),
       }));
     },
 
@@ -646,6 +905,14 @@ export const useAppStore = create<AppState>((set, get) => {
       const photo = project.photos.find((ph) => ph.id === photoId);
       const detection = photo?.detections.find((d) => d.id === detectionId);
       if (!detection) return;
+      if (
+        project.items.some(
+          (i) => i.photoId === photoId && i.detectionId === detectionId,
+        )
+      ) {
+        get().addToast('This item is already in your inventory.', 'info');
+        return;
+      }
       const catalogEntry = CATALOG.find((c) => c.type === detection.type);
       const item = makeItem(detection.type, {
         name: catalogEntry?.name ?? detection.label,
@@ -661,13 +928,14 @@ export const useAppStore = create<AppState>((set, get) => {
 
     /* ── Persistence ── */
     saveToStorage: () => {
-      persistState(get().projects, get().settings);
+      save(get().projects, get().settings);
     },
 
     loadFromStorage: () => {
       const data = getStoredState();
       if (data.projects) set({ projects: data.projects });
-      if (data.settings) set({ settings: { ...DEFAULT_SETTINGS, ...data.settings } });
+      if (data.settings)
+        set({ settings: { ...DEFAULT_SETTINGS, ...data.settings } });
     },
 
     initSamples: () => {
@@ -676,7 +944,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const samples = createSampleProjects();
       const next = [...samples, ...current];
       set({ projects: next });
-      persistState(next, get().settings);
+      save(next, get().settings);
     },
   };
 });

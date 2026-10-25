@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import LOG_LEVEL
+from app.config import LOG_LEVEL, CORS_ORIGINS
 from app.routes import router
 
 logging.basicConfig(
@@ -46,8 +46,8 @@ app = FastAPI(
 # Enable CORS for Next.js web application and local mobile testing
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials="*" not in CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -60,7 +60,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     logger.exception(f"Unhandled error handling {request.method} {request.url}: {exc}")
     return JSONResponse(
         status_code=500,
-        content={"error": "An internal server error occurred.", "detail": str(exc)},
+        content={"error": "An internal server error occurred."},
     )
 
 
