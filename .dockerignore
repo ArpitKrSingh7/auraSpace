@@ -2,7 +2,7 @@ node_modules
 .next
 .git
 **/.env*
-.deprecated
+.depreciated
 services/vision/.venv
 services/vision/.vercel
 services/vision/models
@@ -14,5 +14,3 @@ artifacts
 **/.expo
 **/.gradle
 **/.cxx
-apps/mobile/android
-apps/mobile/dist

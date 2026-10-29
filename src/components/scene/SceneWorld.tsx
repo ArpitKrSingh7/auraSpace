@@ -20,6 +20,13 @@ import { getOpeningLeaf } from '@auraspace/scene-domain';
 import { FurnitureModel } from './FurnitureModel';
 
 const FLOOR = new Plane(new Vector3(0, 1, 0), 0);
+type PointerCapture = { pointerId: number; target: { releasePointerCapture?: (id: number) => void } };
+function releaseCapture(capture?: PointerCapture) {
+  // Keep the original event target: releasing from a bubbling parent leaves
+  // Fiber's captured object registered and steals subsequent room clicks.
+  try { capture?.target.releasePointerCapture?.(capture.pointerId); }
+  catch { /* The browser may already have released a cancelled pointer. */ }
+}
 
 export function insideFootprint(
   x: number,
@@ -195,10 +202,14 @@ function Wall({
   room,
   side,
   height,
+  onOpeningSelect,
+  selectedOpeningId,
 }: {
   room: Room;
   side: Room['door']['wall'];
   height: number;
+  onOpeningSelect?: (id: string) => void;
+  selectedOpeningId?: string | null;
 }) {
   const horizontal = side === 'front' || side === 'back';
   const length = horizontal ? room.width : room.depth;
@@ -277,9 +288,14 @@ function Wall({
         const h = height < 0.1 ? 0.045 : leaf.heightM;
         const sill = height < 0.1 ? 0 : leaf.sillHeightM;
         const trim = Math.min(0.045, leaf.widthM / 5, h / 5);
-        const frameColor = opening.kind === 'door' ? '#c9af8d' : '#edf3ee';
+        const frameColor = opening.id === selectedOpeningId ? '#8db5a5' : opening.kind === 'door' ? '#c9af8d' : '#edf3ee';
         return (
-          <group key={opening.id} position={[leaf.center[0], sill + h / 2, leaf.center[1]]} rotation={[0, leaf.yawRad, 0]}>
+          <group key={opening.id} name={`opening-${opening.id}`} position={[leaf.center[0], sill + h / 2, leaf.center[1]]} rotation={[0, leaf.yawRad, 0]}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (event.delta <= 5) onOpeningSelect?.(opening.id);
+            }}>
             {opening.kind === 'door' || height < 0.1 ? <>
               <Solid at={[0, 0, 0]} size={[leaf.widthM, h, 0.04]} color={frameColor} />
               {height >= 0.1 && <Solid at={[leaf.widthM / 2 - Math.min(0.1, leaf.widthM / 4), 0, 0]} size={[0.035, 0.035, 0.12]} color="#675844" />}
@@ -316,7 +332,7 @@ function FloorLines({ room, grid }: { room: Room; grid: boolean }) {
   }, [room.width, room.depth, grid]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
-    <lineSegments geometry={geometry}>
+    <lineSegments geometry={geometry} raycast={() => null}>
       <lineBasicMaterial
         color={grid ? '#8f9c89' : '#aa9273'}
         transparent
@@ -421,6 +437,8 @@ export function SceneWorld(props: SceneWorldProps) {
     showGrid,
     snap,
     onSelect,
+    onOpeningSelect,
+    selectedOpeningId,
     onMove,
     onRotate,
     onPlace,
@@ -429,13 +447,14 @@ export function SceneWorld(props: SceneWorldProps) {
     onWalk,
   } = props;
   const room = project.room;
+  const roomPointer = useRef(false);
   const [preview, setPreview] = useState<{
     id: string;
     x: number;
     z: number;
     rotation?: number;
   } | null>(null);
-  const rotationDrag = useRef<{ id: string; startAngle: number; startRotation: number; rotation: number; elevationM: number } | null>(null);
+  const rotationDrag = useRef<{ id: string; startAngle: number; startRotation: number; rotation: number; elevationM: number; capture: PointerCapture } | null>(null);
   const [hover, setHover] = useState({ x: room.width / 2, z: room.depth / 2 });
   const drag = useRef<{
     id: string;
@@ -445,9 +464,12 @@ export function SceneWorld(props: SceneWorldProps) {
     x: number;
     z: number;
     elevationM: number;
+    capture: PointerCapture;
   } | null>(null);
   const { invalidate } = useThree();
   useEffect(() => {
+    releaseCapture(drag.current?.capture);
+    releaseCapture(rotationDrag.current?.capture);
     setPreview(null);
     drag.current = null;
     rotationDrag.current = null;
@@ -479,6 +501,7 @@ export function SceneWorld(props: SceneWorldProps) {
   };
   const down = (item: FurnitureItem, e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
+    roomPointer.current = false;
     onSelect(item.id);
     if (placing || item.locked || e.button !== 0) return;
     const elevationM = getItemElevation(item, room.height);
@@ -492,6 +515,7 @@ export function SceneWorld(props: SceneWorldProps) {
       x: item.x,
       z: item.z,
       elevationM,
+      capture: { pointerId: e.pointerId, target: e.target as unknown as PointerCapture['target'] },
     };
     onInteractionChange?.(true);
     (
@@ -533,7 +557,7 @@ export function SceneWorld(props: SceneWorldProps) {
       e.stopPropagation();
       const gesture = rotationDrag.current;
       rotationDrag.current = null;
-      (e.target as unknown as { releasePointerCapture?: (id: number) => void }).releasePointerCapture?.(e.pointerId);
+      releaseCapture(gesture.capture);
       if (gesture.rotation !== gesture.startRotation) onRotate?.(gesture.id, gesture.rotation);
       setPreview(null);
       onInteractionChange?.(false);
@@ -543,9 +567,7 @@ export function SceneWorld(props: SceneWorldProps) {
     e.stopPropagation();
     const d = drag.current;
     drag.current = null;
-    (
-      e.target as unknown as { releasePointerCapture?: (id: number) => void }
-    ).releasePointerCapture?.(e.pointerId);
+    releaseCapture(d.capture);
     if (d.moved) onMove(d.id, d.x, d.z);
     setPreview(null);
     onInteractionChange?.(false);
@@ -556,6 +578,8 @@ export function SceneWorld(props: SceneWorldProps) {
       onPointerMove={move}
       onPointerUp={up}
       onPointerCancel={() => {
+        releaseCapture(drag.current?.capture);
+        releaseCapture(rotationDrag.current?.capture);
         drag.current = null;
         rotationDrag.current = null;
         setPreview(null);
@@ -576,6 +600,15 @@ export function SceneWorld(props: SceneWorldProps) {
         shadow-camera-bottom={-12}
         shadow-normalBias={0.035}
       />
+      <group name="room-surfaces"
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          roomPointer.current = true;
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (event.delta <= 5 && roomPointer.current && !placing) onSelect(null);
+        }}>
       <Solid
         at={[room.width / 2, -0.105, room.depth / 2]}
         size={[room.width + 0.27, 0.2, room.depth + 0.27]}
@@ -586,13 +619,15 @@ export function SceneWorld(props: SceneWorldProps) {
         position={[room.width / 2, 0, room.depth / 2]}
         receiveShadow
         onClick={(e) => {
-          if (e.delta > 5) return;
           e.stopPropagation();
+          if (e.delta > 5 || !roomPointer.current) return;
           if (placing && onPlace) {
             const p = candidate(placing, e.point.x, e.point.z);
             onPlace(p.x, p.z);
-          } else if (mode === 'inside') onWalk?.(e.point.x, e.point.z);
-          else onSelect(null);
+          } else {
+            onSelect(null);
+            if (mode === 'inside') onWalk?.(e.point.x, e.point.z);
+          }
         }}
       >
         <planeGeometry args={[room.width, room.depth]} />
@@ -604,6 +639,8 @@ export function SceneWorld(props: SceneWorldProps) {
           key={side}
           room={room}
           side={side}
+          onOpeningSelect={placing ? undefined : onOpeningSelect}
+          selectedOpeningId={selectedOpeningId}
           height={
             mode === 'plan'
               ? 0.075
@@ -622,6 +659,7 @@ export function SceneWorld(props: SceneWorldProps) {
           <meshStandardMaterial color="#f8f5ee" />
         </mesh>
       )}
+      </group>
       {project.items
         .filter((i) => i.placed)
         .map((item) => {
@@ -664,6 +702,7 @@ export function SceneWorld(props: SceneWorldProps) {
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       if (e.button !== 0) return;
+                      roomPointer.current = false;
                       const elevationM = getItemElevation(item, room.height);
                       const hit = point(e, elevationM);
                       if (!hit) return;
@@ -673,6 +712,7 @@ export function SceneWorld(props: SceneWorldProps) {
                         startRotation: item.rotation,
                         rotation: item.rotation,
                         elevationM,
+                        capture: { pointerId: e.pointerId, target: e.target as unknown as PointerCapture['target'] },
                       };
                       drag.current = null;
                       onInteractionChange?.(true);

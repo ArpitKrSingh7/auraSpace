@@ -1,16 +1,6 @@
 'use client';
 
 import { create } from 'zustand';
-import type {
-  FurnitureItem,
-  FurnitureType,
-  Photo,
-  Project,
-  Room,
-  Settings,
-  ViewMode,
-  LayoutSnapshot,
-} from '../domain/types';
 import {
   CATALOG,
   DEFAULT_SETTINGS,
@@ -25,6 +15,15 @@ import {
   snapPosition,
   type ProjectWarning,
 } from '../domain/geometry';
+import type {
+  FurnitureItem,
+  FurnitureType,
+  Photo,
+  Project,
+  Room,
+  Settings,
+  ViewMode,
+} from '../domain/types';
 import {
   validateItem,
   validateProject,

@@ -1,0 +1,12 @@
+.depreciated/
+.git/
+.next/
+.env*
+**/.env*
+.artifacts/
+artifacts/
+**/node_modules/
+**/.venv/
+**/.vercel/
+**/__pycache__/
+**/*.tsbuildinfo

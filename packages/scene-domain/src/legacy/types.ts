@@ -123,6 +123,8 @@ export interface SceneProps {
   showGrid: boolean;
   snap: boolean;
   onSelect: (id: string | null) => void;
+  onOpeningSelect?: (id: string) => void;
+  selectedOpeningId?: string | null;
   onMove: (id: string, x: number, z: number) => void;
   onRotate?: (id: string, rotationDeg: number) => void;
   onPlace?: (x: number, z: number) => void;

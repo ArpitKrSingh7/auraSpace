@@ -13,14 +13,15 @@ const walls = ['back', 'right', 'front', 'left'] as const;
 const wallNames = { back: 'Back wall', right: 'Right wall', front: 'Front wall', left: 'Left wall' };
 const wallLength = (room: Room, wall: RoomOpening['wall']) => wall === 'front' || wall === 'back' ? room.width : room.depth;
 
-export function RoomSettingsDialog({ onClose, onPreview }: {
+export function RoomSettingsDialog({ onClose, onPreview, initialOpeningId }: {
   onClose: () => void;
   onPreview?: (room: Room | null) => void;
+  initialOpeningId?: string | null;
 }) {
   const project = useAppStore((state) => state.activeProject());
   const [room, setRoom] = useState<Room>(() => ({ ...project!.room, openings: getRoomOpenings(project!.room) }));
-  const [tab, setTab] = useState<'room' | 'openings'>('room');
-  const [selected, setSelected] = useState<string | null>(room.openings?.[0]?.id ?? null);
+  const [tab, setTab] = useState<'room' | 'openings'>(initialOpeningId ? 'openings' : 'room');
+  const [selected, setSelected] = useState<string | null>(initialOpeningId ?? room.openings?.[0]?.id ?? null);
   const [error, setError] = useState('');
   const openings = room.openings ?? [];
   const opening = openings.find((candidate) => candidate.id === selected);

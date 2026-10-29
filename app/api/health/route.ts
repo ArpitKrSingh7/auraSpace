@@ -10,6 +10,7 @@ function getVisionUrl(path: string): URL {
 }
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET() {
   let visionStatus = 'disconnected';
@@ -20,12 +21,13 @@ export async function GET() {
     try {
       const res = await fetch(getVisionUrl('health'), {
         headers: process.env.VISION_API_TOKEN ? { 'X-AuraSpace-Vision-Token': process.env.VISION_API_TOKEN } : {},
-        signal: AbortSignal.timeout(2000),
+        // A cold Python function imports the ML runtime before /health runs.
+        signal: AbortSignal.timeout(10_000),
         cache: 'no-store',
       });
       if (res.ok) {
         visionStatus = 'connected';
-      }
+      } else visionStatus = 'unavailable';
     } catch {
       visionStatus = 'unavailable';
     }

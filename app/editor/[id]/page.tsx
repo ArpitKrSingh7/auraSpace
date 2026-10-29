@@ -1,80 +1,51 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import { AnalysisInspector } from '@/components/capture/AnalysisInspector';
+import { OpeningControls } from '@/components/editor/OpeningControls';
+import { RotationControl } from '@/components/editor/RotationControl';
+import { ExportDialog } from '@/components/editor/panels/ExportDialog';
+import { FurnitureTray } from '@/components/editor/panels/FurnitureTray';
+import { ItemInspector } from '@/components/editor/panels/ItemInspector';
+import { PhotoUploadDialog } from '@/components/editor/panels/PhotoUploadDialog';
+import { RoomSettingsDialog } from '@/components/editor/panels/RoomSettingsDialog';
+import { ViewTab } from '@/components/editor/panels/ViewTab';
+import { Dialog } from '@/components/ui/Dialog';
+import { getRoomOpenings } from '@/domain/geometry';
+import type { Room, RoomOpening } from '@/domain/types';
 import { useAppStore } from '@/store/useAppStore';
-import type {
-  Detection,
-  FurnitureItem,
-  FurnitureType,
-  ViewMode,
-  Room,
-} from '@/domain/types';
-import { CATALOG } from '@/domain/catalog';
-import { validatePlacement } from '@/domain/geometry';
 import {
   ArrowLeft,
-  Eye,
-  Layout,
-  Map,
-  Undo2,
-  Redo2,
-  Save,
-  Download,
-  ChevronUp,
-  ChevronDown,
-  Plus,
-  RotateCw,
-  Trash2,
-  Copy,
-  Lock,
-  Unlock,
-  Move,
-  GripHorizontal,
   Camera,
-  Settings2,
-  X,
-  Box,
-  Maximize2,
-  Grid3x3,
-  Magnet,
-  AlertTriangle,
   Check,
-  Image,
-  Sparkles,
-  MoreHorizontal,
-  SlidersHorizontal,
+  ChevronDown,
+  DoorOpen,
+  Download,
+  Eye,
   FolderOpen,
+  Grid3x3,
+  Layout,
+  Lock,
+  Magnet,
+  Maximize2,
+  MoreHorizontal,
+  Plus,
+  Redo2,
+  RotateCw,
+  Settings2,
+  SlidersHorizontal,
+  Sparkles,
+  Undo2,
+  Unlock,
+  X,
 } from 'lucide-react';
-import { Dialog } from '@/components/ui/Dialog';
-import { exportProjectJson } from '@/domain/validation';
-import { downloadFile, exportPlanSvg } from '@/domain/export';
-import { AnalysisInspector } from '@/components/capture/AnalysisInspector';
+import dynamic from 'next/dynamic';
+import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 /* Dynamically import the 3D scene to avoid SSR issues */
 const SceneCanvas = dynamic(() => import('@/components/scene/SceneCanvas'), {
   ssr: false,
 });
-
-/* ── Furniture Type Icons ── */
-
-
-/* ── View Mode Tab ── */
-import { ViewTab } from '@/components/editor/panels/ViewTab';
-
-/* ── Item Inspector Panel ── */
-import { ItemInspector } from '@/components/editor/panels/ItemInspector';
-
-/* ── Furniture Tray ── */
-import { FurnitureTray } from '@/components/editor/panels/FurnitureTray';
-
-/* ── Room Settings Dialog ── */
-import { RoomSettingsDialog } from '@/components/editor/panels/RoomSettingsDialog';
-
-/* ── Export Dialog ── */
-import { ExportDialog } from '@/components/editor/panels/ExportDialog';
-import { RotationControl } from '@/components/editor/RotationControl';
 
 /* ── Main Editor Page ── */
 export default function EditorPage() {
@@ -119,12 +90,15 @@ export default function EditorPage() {
   const [showRotation, setShowRotation] = useState(false);
   const [rotationPreview, setRotationPreview] = useState<{ id: string; angle: number } | null>(null);
   const [roomPreview, setRoomPreview] = useState<Room | null>(null);
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null);
+  const [openingPreview, setOpeningPreview] = useState<{ id: string; angle: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
-    const state = useAppStore.getState();
     openProject(projectId);
     setTrayOpen(false);
+    setSelectedOpeningId(null);
+    setOpeningPreview(null);
     if (new URLSearchParams(window.location.search).has('capture'))
       setShowPhotoUpload(true);
   }, [projectId, openProject, setTrayOpen]);
@@ -134,6 +108,11 @@ export default function EditorPage() {
     setShowRotation(false);
     setRotationPreview(null);
   }, [selectedItemId]);
+
+  useEffect(() => {
+    setSelectedOpeningId(null);
+    setOpeningPreview(null);
+  }, [viewMode, placingItem?.id, trayOpen]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -159,6 +138,8 @@ export default function EditorPage() {
           selectItem(null);
           setTrayOpen(false);
           setShowMore(false);
+          setSelectedOpeningId(null);
+          setOpeningPreview(null);
         }
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
@@ -210,6 +191,26 @@ export default function EditorPage() {
 
   const selectedItem =
     project.items.find((i) => i.id === selectedItemId) ?? null;
+  const openings = getRoomOpenings(project.room);
+  const selectOpening = (id: string) => {
+    if (placingItem) return;
+    selectItem(null);
+    setSelectedOpeningId(id);
+    setOpeningPreview(null);
+  };
+  const closeOpening = () => { setSelectedOpeningId(null); setOpeningPreview(null); };
+  const changeOpening = (patch: Partial<Pick<RoomOpening, 'openAngleDeg' | 'swingDirection'>>) => {
+    const store = useAppStore.getState(), live = store.activeProject();
+    if (!live || live.id !== project.id) return;
+    const current = getRoomOpenings(live.room);
+    if (!current.some((item) => item.id === selectedOpeningId)) return;
+    store.updateRoom({ openings: current.map((item) => item.id === selectedOpeningId ? { ...item, ...patch } : item) });
+    setOpeningPreview(null);
+  };
+  const sceneRoom = roomPreview ?? (openingPreview ? {
+    ...project.room,
+    openings: openings.map((item) => item.id === openingPreview.id ? { ...item, openAngleDeg: openingPreview.angle } : item),
+  } : project.room);
 
   return (
     <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-[#eeeee7]">
@@ -407,9 +408,9 @@ export default function EditorPage() {
       </div>
       <div className="editor-viewport relative flex-1">
         <SceneCanvas
-          project={rotationPreview || roomPreview ? {
+          project={rotationPreview || roomPreview || openingPreview ? {
             ...project,
-            room: roomPreview ?? project.room,
+            room: sceneRoom,
             items: project.items.map((item) => item.id === rotationPreview?.id
               ? { ...item, rotation: rotationPreview.angle } : item),
           } : project}
@@ -417,7 +418,9 @@ export default function EditorPage() {
           selectedId={selectedItemId}
           showGrid={showGrid}
           snap={snap}
-          onSelect={selectItem}
+          onSelect={(id) => { closeOpening(); selectItem(id); }}
+          onOpeningSelect={selectOpening}
+          selectedOpeningId={selectedOpeningId}
           onMove={moveItem}
           onRotate={(id, rotation) => useAppStore.getState().updateItem(id, { rotation })}
           onPlace={placingItem ? (x, z) => confirmPlacing(x, z) : undefined}
@@ -510,6 +513,7 @@ export default function EditorPage() {
                 </button>
               </>
             ) : (
+              <>
               <button
                 className="btn-primary whitespace-nowrap !py-3"
                 onClick={() => {
@@ -520,8 +524,17 @@ export default function EditorPage() {
                 <Plus size={17} />
                 Add furniture
               </button>
+              {openings.length > 0 && <button type="button" className="btn-ghost !px-3" aria-label="Doors and windows" title="Open, close and adjust doors or windows"
+                onClick={() => selectedOpeningId ? closeOpening() : selectOpening(openings[0].id)}><DoorOpen size={19} /></button>}
+              </>
             )}
           </div>
+        )}
+        {selectedOpeningId && !placingItem && !trayOpen && !showRoomSettings && (
+          <OpeningControls key={selectedOpeningId} openings={openings} selectedId={selectedOpeningId}
+            onSelect={selectOpening} onClose={closeOpening} onSettings={() => setShowRoomSettings(true)}
+            onPreview={(angle) => setOpeningPreview(angle === null ? null : { id: selectedOpeningId, angle })}
+            onCommit={changeOpening} />
         )}
         {selectedItem && showRotation && !placingItem && !trayOpen && (
           <div className="absolute bottom-24 left-1/2 z-30 w-[min(300px,calc(100%-24px))] -translate-x-1/2 rounded-2xl border border-surface-200 bg-white p-4 shadow-elevated" role="region" aria-label="Rotate furniture">
@@ -551,13 +564,12 @@ export default function EditorPage() {
       </div>
       <FurnitureTray />
       {showRoomSettings && (
-        <RoomSettingsDialog onPreview={setRoomPreview} onClose={() => { setShowRoomSettings(false); setRoomPreview(null); }} />
+        <RoomSettingsDialog initialOpeningId={selectedOpeningId} onPreview={setRoomPreview} onClose={() => { setShowRoomSettings(false); setRoomPreview(null); closeOpening(); }} />
       )}
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
       {showPhotoUpload && (
         <PhotoUploadDialog
           onClose={() => setShowPhotoUpload(false)}
-          onOpenInspector={() => setShowInspector(true)}
         />
       )}
       <Dialog
@@ -639,6 +651,3 @@ export default function EditorPage() {
     </div>
   );
 }
-
-/* ── Photo Upload Dialog ── */
-import { PhotoUploadDialog } from '@/components/editor/panels/PhotoUploadDialog';

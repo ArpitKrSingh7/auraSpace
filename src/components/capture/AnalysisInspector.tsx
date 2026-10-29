@@ -1,19 +1,18 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { Photo, Detection } from '@/domain/types';
-import { processPhoto, removeFurniture } from '@/services/vision.web';
 import { Dialog } from '@/components/ui/Dialog';
+import type { Detection, Photo } from '@/domain/types';
+import { processPhoto, removeFurniture } from '@/services/vision.web';
 import {
-  Sparkles,
+  Activity,
+  Box,
+  Cpu,
   Eye,
   Layers,
-  Activity,
-  Cpu,
-  Box,
-  X,
   Scissors,
+  Sparkles,
 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface AnalysisInspectorProps {
   photo?: Photo | null;

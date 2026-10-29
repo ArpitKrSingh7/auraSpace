@@ -88,7 +88,7 @@ async function getDetector(progress?: Progress): Promise<Detector> {
       if (!tf.getBackend()) await tf.setBackend('cpu');
       const coco = await import('@tensorflow-models/coco-ssd');
       return await coco.load({ base: 'lite_mobilenet_v2' });
-    })().catch((error) => {
+    })().catch(() => {
       detectorPromise = null;
       throw new VisionError(
         'The furniture model could not load. Check your connection, or outline an item manually.',
@@ -107,7 +107,7 @@ export async function analyzePhoto(
   if (!serviceEndpoint) {
     try {
       const res = await fetch('/api/health', {
-        signal: AbortSignal.timeout(2500),
+        signal: AbortSignal.timeout(12_000),
       });
       const health = await res.json();
       if (health.services?.vision === 'connected')

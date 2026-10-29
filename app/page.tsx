@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { RoomPreview } from '@/components/projects/RoomPreview';
+import { Dialog } from '@/components/ui/Dialog';
+import type { Project } from '@/domain/types';
+import { MAX_IMPORT_BYTES, parseProjectJson } from '@/domain/validation';
+import { useAppStore } from '@/store/useAppStore';
 import {
   ArrowDownUp,
   ArrowRight,
@@ -20,13 +23,9 @@ import {
   Settings2,
   Sparkles,
   Trash2,
-  X,
 } from 'lucide-react';
-import { useAppStore } from '@/store/useAppStore';
-import { RoomPreview } from '@/components/projects/RoomPreview';
-import { Dialog } from '@/components/ui/Dialog';
-import { MAX_IMPORT_BYTES, parseProjectJson } from '@/domain/validation';
-import type { Project } from '@/domain/types';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 
 type Filter = 'all' | 'favorites' | 'samples';
 

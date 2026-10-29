@@ -37,12 +37,4 @@ Thumbs.db
 artifacts/
 services/vision/models/
 services/vision/.vercel/
-apps/mobile/.expo/
-apps/mobile/android/.gradle/
-apps/mobile/android/.cxx/
-apps/mobile/android/build/
-apps/mobile/android/app/build/
-apps/mobile/android/local.properties
-apps/mobile/android/app/debug.keystore
-apps/mobile/dist/
 *.tsbuildinfo

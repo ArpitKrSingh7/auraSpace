@@ -400,6 +400,10 @@ function World({
   };
   return (
     <group
+      onClick={(event) => {
+        event.stopPropagation();
+        if (event.delta <= 5 && !placingId) onSelect(null);
+      }}
       onPointerMove={(e) => {
         const r = rotation.current;
         if (r) {
@@ -470,8 +474,10 @@ function World({
           if (e.delta > 5) return;
           e.stopPropagation();
           if (placingId) onPlace(e.point.x, e.point.z);
-          else if (mode === 'inside') bridge.current.walk(e.point.x, e.point.z);
-          else onSelect(null);
+          else {
+            onSelect(null);
+            if (mode === 'inside') bridge.current.walk(e.point.x, e.point.z);
+          }
         }}
       >
         <RoomFloor scene={scene} />

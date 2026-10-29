@@ -140,6 +140,9 @@ export default function SceneCanvas(props: SceneProps) {
         }}
         dpr={[1, 1.5]}
         className="w-full h-full"
+        onPointerMissed={(event) => {
+          if (event.type === 'click' && event.button === 0 && !placing) props.onSelect(null);
+        }}
       >
         <CameraManager
           mode={mode}

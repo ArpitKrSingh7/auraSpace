@@ -1,7 +1,7 @@
 # Deploying the full AuraSpace application
 
 The target includes learned furniture detection, metric-depth room drafts,
-Big-LaMa removal and the native processing backend. Building the interface
+Big-LaMa removal and the optional cloud-processing backend. Building the interface
 alone does not deploy those services. Existing reconstruction limitations and
 unfinished cloud-restore features remain as documented in the roadmap.
 
@@ -63,14 +63,14 @@ are unavailable or inference exceeds available resources, use Option B.
 
 The web proxy now waits up to 180 seconds for inference; the browser waits 185
 seconds, and the web route budget is 300 seconds on hosts honoring it. These
-are bounded synchronous requests. Native jobs remain asynchronous. Web room
+are bounded synchronous requests. The optional API/worker job flow remains asynchronous. Web room
 draft requests omit unused depth PNGs while still fitting raw metric depth,
 reducing the response-size risk. Vercel's 4.5 MB payload limit still applies
 to other outputs.
 
-This two-service configuration hosts web and vision. Native queued processing
-also requires API, worker, PostgreSQL, Redis and storage. Option B supplies that
-backend as well; the current Vercel config does not declare those services.
+This two-service configuration hosts web and vision. Optional cloud jobs also require API, worker, PostgreSQL, Redis and storage.
+Option B supplies that backend as well; the current Vercel config does not
+declare those services. The current website uses its direct vision proxy.
 
 ## Option B: Vercel web with the full backend on a Docker server
 
@@ -85,7 +85,6 @@ other services and OS, and measure peak usage. This is not a hardware guarantee.
 ```mermaid
 flowchart LR
   Web[Vercel web] -->|Server token| Gateway[HTTPS gateway]
-  Native[Native app] --> Gateway
   Gateway -->|/vision/| Vision[Vision and pinned models]
   Gateway -->|/v1/| API[TypeScript API]
   API --> DB[(PostgreSQL)]
@@ -146,7 +145,7 @@ Caddy starts after API and vision health checks and provisions HTTPS.
 
 Only gateway ports 80/443 are published. Database, Redis, API and vision use
 the private Docker network. `/vision/*` requires the shared server token;
-native `/v1/*` routes retain the existing API authentication. The worker reaches
+`/v1/*` routes retain the existing API authentication. The worker reaches
 vision privately. Secrets and generated models are not copied into Git.
 
 Do not run `docker compose down -v` as an upgrade or retry step; it deletes
@@ -185,24 +184,31 @@ furniture detection, room draft review/calibration/application and furniture
 removal. The production vision container's model flags should reflect its
 preloaded models; a failed model task or checksum prevents startup.
 
-For the existing native app, set **Settings → Server URL** to the HTTPS API
-origin without `/vision`. Exercise a guest session, upload, queued job, worker
-completion and private result download. Rebuilding Android stays deferred.
-Browser-local web rooms and native cloud projects remain separate clients;
-deployment does not implement the unfinished cloud restore/sync features.
+For optional cloud-job development, exercise guest session creation, upload,
+queued processing, worker completion and private result download through the
+API. The website does not yet connect its browser-local projects to that flow.
+The mobile prototype is archived in `.depreciated/mobile`; its workspace and
+Android build are no longer active.
 
 Inspect failures using Compose logs for `model-assets`, `migrate`, `vision`,
 `api`, `worker` or `gateway`. A successful build, healthy HTTP server, downloaded
 weight and actual inference are separate checks; do not describe the full
 deployment as verified until the complete photo flow succeeds.
 
-## What was checked locally
+## Verification so far
 
-The latest cloud log confirms dependency resolution and the exact standard
-bundle-size failure. The Large Functions opt-in is documented by Vercel and
-checked by its Python builder. Local provisioning tests use tiny independent
+The earlier cloud log confirmed dependency resolution and the standard
+bundle-size failure; a subsequent Vercel deployment succeeded. Local provisioning tests use tiny independent
 fixtures to verify missing/corrupt asset rejection, streaming hashes and model
 warmup staying in one process. The production Compose configuration and input
-checker were validated without starting services. Real Docker image builds,
-model provisioning and hosted inference remain to be run on the chosen host.
+checker were validated without starting services.
+
+On 30 October 2026, the deployed website returned its metadata and manifest,
+processed a synthetic image, executed Mask R-CNN and the pinned indoor metric
+depth model, and returned a Big-LaMa removal result. The synthetic non-room
+correctly produced an insufficient-evidence room proposal. These smoke checks
+verify model execution; they do not establish real-room accuracy, large-image
+memory use or the complete browser review flow. Those checks, physical-device
+interaction checks and an actual Docker deployment remain pending.
+
 No local server stack, model loading or Android build was started for this work.

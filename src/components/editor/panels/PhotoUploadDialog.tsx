@@ -1,19 +1,17 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useAppStore } from '@/store/useAppStore';
-import type { Detection, FurnitureType } from '@/domain/types';
-import { Camera, Check, Image } from 'lucide-react';
 import { Dialog } from '@/components/ui/Dialog';
+import type { Detection, FurnitureType } from '@/domain/types';
+import { useAppStore } from '@/store/useAppStore';
+import { Camera, Check } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { typeEmoji } from '../furniture-icons';
 import { RoomReconstructionReview } from './RoomReconstructionReview';
 
 export function PhotoUploadDialog({
   onClose,
-  onOpenInspector,
 }: {
   onClose: () => void;
-  onOpenInspector?: () => void;
 }) {
   const { addPhoto, addToast } = useAppStore();
   const project = useAppStore((s) => s.activeProject());

@@ -9,7 +9,6 @@
     "lint": "tsc --noEmit",
     "test": "node --import ./tests/register.mjs tests/run.mjs",
     "typecheck": "tsc --noEmit",
-    "dev:android": "pnpm --filter @auraspace/mobile start",
     "dev:api": "node --env-file=.env --import tsx --watch apps/api/src/index.ts",
     "dev:worker": "node --env-file=.env --import tsx --watch apps/worker/src/index.ts",
     "typecheck:all": "pnpm typecheck && pnpm -r --if-present typecheck",

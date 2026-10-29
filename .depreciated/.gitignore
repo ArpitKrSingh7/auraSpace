@@ -1,0 +1,10 @@
+# Preserve mobile source, not generated native binaries and dependency caches.
+**/node_modules/
+**/.expo/
+**/.gradle/
+**/.cxx/
+**/build/
+**/dist/
+**/local.properties
+**/debug.keystore
+**/*.tsbuildinfo
