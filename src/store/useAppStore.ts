@@ -426,6 +426,9 @@ export const useAppStore = create<AppState>((set, get) => {
       const p = getActive();
       if (!p) return;
       const proposed = { ...p.room, ...roomUpdates };
+      for (const name of ['width', 'depth', 'height'] as const)
+        if (roomUpdates[name] !== undefined && roomUpdates[name] !== p.room[name] && roomUpdates.dimensionSources?.[name] === undefined)
+          proposed.dimensionSources = { ...proposed.dimensionSources, [name]: 'user-measured' };
       const wallLength =
         proposed.door.wall === 'front' || proposed.door.wall === 'back'
           ? proposed.width
@@ -571,7 +574,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!item) return;
       if (
         item.locked &&
-        ['x', 'z', 'rotation', 'width', 'depth', 'height', 'placed'].some(
+        ['x', 'z', 'rotation', 'width', 'depth', 'height', 'placed', 'mounting', 'elevationM'].some(
           (k) => k in updates,
         )
       )

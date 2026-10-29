@@ -10,6 +10,11 @@ const schemas = {
     image,
     include_depth: z.boolean().optional(),
     include_room: z.boolean().optional(),
+    intrinsics: z.object({
+      fx: z.number().finite().positive().max(1_000_000),
+      fy: z.number().finite().positive().max(1_000_000),
+      cx: z.number().finite(), cy: z.number().finite(),
+    }).optional(),
   }),
   process: z.object({
     image,
@@ -76,7 +81,7 @@ export async function proxyVision(
       return NextResponse.json(
         {
           error:
-            'The vision service is not configured. Use on-device detection or add furniture manually.',
+            'The vision service is not configured. Configure VISION_SERVICE_URL for photo reconstruction, or enter room dimensions manually.',
         },
         { status: 503 },
       );
@@ -94,7 +99,7 @@ export async function proxyVision(
     return NextResponse.json(
       {
         error:
-          'The vision service is unavailable or timed out. Retry or continue with manual furniture placement.',
+          'The vision service is unavailable or timed out. Retry, or enter room dimensions and place furniture manually.',
       },
       { status: 502 },
     );

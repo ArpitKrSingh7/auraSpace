@@ -9,6 +9,7 @@ import type {
   FurnitureItem,
   FurnitureType,
   ViewMode,
+  Room,
 } from '@/domain/types';
 import { CATALOG } from '@/domain/catalog';
 import { validatePlacement } from '@/domain/geometry';
@@ -73,6 +74,7 @@ import { RoomSettingsDialog } from '@/components/editor/panels/RoomSettingsDialo
 
 /* ── Export Dialog ── */
 import { ExportDialog } from '@/components/editor/panels/ExportDialog';
+import { RotationControl } from '@/components/editor/RotationControl';
 
 /* ── Main Editor Page ── */
 export default function EditorPage() {
@@ -114,6 +116,9 @@ export default function EditorPage() {
   const [showMore, setShowMore] = useState(false);
   const [showLayouts, setShowLayouts] = useState(false);
   const [layoutName, setLayoutName] = useState('');
+  const [showRotation, setShowRotation] = useState(false);
+  const [rotationPreview, setRotationPreview] = useState<{ id: string; angle: number } | null>(null);
+  const [roomPreview, setRoomPreview] = useState<Room | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -126,6 +131,8 @@ export default function EditorPage() {
 
   useEffect(() => {
     setShowDetails(false);
+    setShowRotation(false);
+    setRotationPreview(null);
   }, [selectedItemId]);
 
   // Keyboard shortcuts
@@ -312,7 +319,7 @@ export default function EditorPage() {
                   action: () => setShowRoomSettings(true),
                 },
                 {
-                  label: 'Room photos',
+                  label: 'Room from photo',
                   icon: Camera,
                   action: () => setShowPhotoUpload(true),
                 },
@@ -400,13 +407,19 @@ export default function EditorPage() {
       </div>
       <div className="editor-viewport relative flex-1">
         <SceneCanvas
-          project={project}
+          project={rotationPreview || roomPreview ? {
+            ...project,
+            room: roomPreview ?? project.room,
+            items: project.items.map((item) => item.id === rotationPreview?.id
+              ? { ...item, rotation: rotationPreview.angle } : item),
+          } : project}
           mode={viewMode}
           selectedId={selectedItemId}
           showGrid={showGrid}
           snap={snap}
           onSelect={selectItem}
           onMove={moveItem}
+          onRotate={(id, rotation) => useAppStore.getState().updateItem(id, { rotation })}
           onPlace={placingItem ? (x, z) => confirmPlacing(x, z) : undefined}
           placing={placingItem}
         />
@@ -443,7 +456,7 @@ export default function EditorPage() {
                 </span>
                 <button
                   className="btn-ghost !px-3 !text-xs"
-                  onClick={() => setShowDetails(!showDetails)}
+                  onClick={() => { setShowRotation(false); setShowDetails(!showDetails); }}
                   aria-expanded={showDetails}
                 >
                   <SlidersHorizontal size={16} />
@@ -453,10 +466,9 @@ export default function EditorPage() {
                   className="btn-ghost !px-3"
                   disabled={selectedItem.locked}
                   aria-label="Rotate selected furniture"
-                  title="Rotate 45°"
-                  onClick={() =>
-                    useAppStore.getState().rotateItem(selectedItem.id, 45)
-                  }
+                  title="Rotate freely or enter an angle"
+                  aria-expanded={showRotation}
+                  onClick={() => { setShowDetails(false); setShowRotation(!showRotation); }}
                 >
                   <RotateCw size={16} />
                 </button>
@@ -511,18 +523,35 @@ export default function EditorPage() {
             )}
           </div>
         )}
+        {selectedItem && showRotation && !placingItem && !trayOpen && (
+          <div className="absolute bottom-24 left-1/2 z-30 w-[min(300px,calc(100%-24px))] -translate-x-1/2 rounded-2xl border border-surface-200 bg-white p-4 shadow-elevated" role="region" aria-label="Rotate furniture">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-semibold">Rotate {selectedItem.name}</span>
+              <button type="button" aria-label="Close rotation controls" className="rounded-lg p-1.5 hover:bg-surface-100" onClick={() => { setShowRotation(false); setRotationPreview(null); }}><X size={16} /></button>
+            </div>
+            <RotationControl value={selectedItem.rotation} disabled={selectedItem.locked}
+              onPreview={(angle) => setRotationPreview({ id: selectedItem.id, angle })}
+              onCancel={() => setRotationPreview(null)}
+              onCommit={(rotation) => {
+                if (rotation !== selectedItem.rotation) useAppStore.getState().updateItem(selectedItem.id, { rotation });
+                setRotationPreview(null);
+              }} />
+          </div>
+        )}
         {selectedItem && showDetails && (
           <div className="absolute bottom-24 right-3 z-30 w-[min(340px,calc(100%-24px))] overflow-hidden rounded-2xl border border-surface-200 bg-white shadow-elevated sm:bottom-auto sm:top-4">
             <ItemInspector
               item={selectedItem}
               onClose={() => setShowDetails(false)}
+              onRotationPreview={(angle) => setRotationPreview({ id: selectedItem.id, angle })}
+              onRotationEnd={() => setRotationPreview(null)}
             />
           </div>
         )}
       </div>
       <FurnitureTray />
       {showRoomSettings && (
-        <RoomSettingsDialog onClose={() => setShowRoomSettings(false)} />
+        <RoomSettingsDialog onPreview={setRoomPreview} onClose={() => { setShowRoomSettings(false); setRoomPreview(null); }} />
       )}
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
       {showPhotoUpload && (

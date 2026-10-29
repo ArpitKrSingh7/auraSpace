@@ -6,6 +6,7 @@ import type { Detection, FurnitureType } from '@/domain/types';
 import { Camera, Check, Image } from 'lucide-react';
 import { Dialog } from '@/components/ui/Dialog';
 import { typeEmoji } from '../furniture-icons';
+import { RoomReconstructionReview } from './RoomReconstructionReview';
 
 export function PhotoUploadDialog({
   onClose,
@@ -26,7 +27,8 @@ export function PhotoUploadDialog({
   const [analysisMessage, setAnalysisMessage] = useState(
     lastPhoto?.analysisMessage ?? '',
   );
-  const [isSample, setIsSample] = useState(false);
+  const [isSample, setIsSample] = useState(lastPhoto?.name.endsWith('-sample-capture.jpg') ?? false);
+  const currentPhoto = project?.photos.find((photo) => photo.id === photoId);
   const [failed, setFailed] = useState(false);
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -247,8 +249,8 @@ export function PhotoUploadDialog({
       maxWidth="max-w-lg"
     >
       <p className="mb-5 text-sm leading-relaxed text-surface-500">
-        Choose a room photo to find furniture. Review the results and keep the
-        pieces you want in your tray.
+        Choose a photo to build a room draft and find furniture. Review the room
+        scale and keep the pieces you want in your tray.
       </p>
 
       {!preview ? (
@@ -319,6 +321,9 @@ export function PhotoUploadDialog({
               ? 'Illustrated sample · Predefined observations'
               : analysisMessage}
           </p>
+          {currentPhoto && project && !isSample && (
+            <RoomReconstructionReview key={currentPhoto.id} photo={currentPhoto} projectId={project.id} disabled={analyzing} />
+          )}
           {detections.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold mb-2">Detected Furniture</h3>

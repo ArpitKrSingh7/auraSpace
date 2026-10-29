@@ -24,6 +24,7 @@ export function furnitureType(label: string): FurnitureType | null {
     'dining table': 'table',
     table: 'table',
     'potted plant': 'plant',
+    refrigerator: 'fridge',
   };
   return names[label.toLowerCase()] ?? null;
 }

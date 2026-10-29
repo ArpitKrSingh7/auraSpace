@@ -45,9 +45,10 @@ MAX_DETECTIONS: int = int(os.getenv("MAX_DETECTIONS", "25"))
 
 # COCO class IDs that correspond to "furniture" for room-layout purposes
 # fmt: off
-FURNITURE_CLASS_IDS: set[int] = {62, 63, 64, 65, 67}
+FURNITURE_CLASS_IDS: set[int] = {62, 63, 64, 65, 67, 82}
 COCO_FURNITURE_LABELS: dict[int, str] = {
     62: "chair", 63: "couch", 64: "potted plant", 65: "bed", 67: "dining table",
+    82: "refrigerator",
 }
 
 # Full COCO 91-class names (1-indexed) for lookup

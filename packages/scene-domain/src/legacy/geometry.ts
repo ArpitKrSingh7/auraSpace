@@ -1,4 +1,7 @@
 import type { FurnitureItem, Project, Room } from './types';
+import { getRoomOpenings, roomOpeningToCanonical } from './openings';
+import { getOpeningLeaf } from '../openings';
+export { getRoomOpenings, roomOpeningToCanonical } from './openings';
 
 export interface PointXZ {
   x: number;
@@ -9,6 +12,28 @@ export interface ProjectWarning {
   message: string;
 }
 const EPSILON = 0.00001;
+
+/** Bottom elevation in meters. Missing fields retain legacy floor placement. */
+export function getItemElevation(
+  item: Pick<FurnitureItem, 'mounting' | 'elevationM' | 'height'>,
+  roomHeight?: number,
+): number {
+  return item.mounting === 'ceiling' && roomHeight !== undefined
+    ? Math.max(0, roomHeight - item.height)
+    : item.elevationM ?? 0;
+}
+
+/** Bounding vertical intervals are conservative; touching surfaces may coexist. */
+function verticallyOverlaps(
+  a: Pick<FurnitureItem, 'mounting' | 'elevationM' | 'height'>,
+  b: Pick<FurnitureItem, 'mounting' | 'elevationM' | 'height'>,
+  roomHeight?: number,
+): boolean {
+  const bottomA = getItemElevation(a, roomHeight),
+    bottomB = getItemElevation(b, roomHeight);
+  return bottomA + a.height > bottomB + EPSILON &&
+    bottomB + b.height > bottomA + EPSILON;
+}
 
 /** Local +x rotates clockwise toward +z when viewed in plan. */
 export function getCorners(
@@ -52,13 +77,14 @@ function polygonOverlap(a: PointXZ[], b: PointXZ[]): boolean {
 }
 
 /** Touching edges are allowed. Rugs are floor decoration rather than obstacles. */
-export function overlaps(a: FurnitureItem, b: FurnitureItem): boolean {
+export function overlaps(a: FurnitureItem, b: FurnitureItem, roomHeight?: number): boolean {
   if (
     !a.placed ||
     !b.placed ||
     a.id === b.id ||
     a.type === 'rug' ||
-    b.type === 'rug'
+    b.type === 'rug' ||
+    !verticallyOverlaps(a, b, roomHeight)
   )
     return false;
   return polygonOverlap(getCorners(a), getCorners(b));
@@ -94,24 +120,22 @@ export function isInsideRoom(item: FurnitureItem, room: Room): boolean {
 
 /** Conservative square around an inward door swing, not a building-code check. */
 export function getDoorClearance(room: Room): PointXZ[] {
-  const { wall, offset, width } = room.door;
-  let x = offset;
-  let z = 0;
-  let w = width;
-  let d = width;
-  if (wall === 'front') z = room.depth - width;
-  if (wall === 'left' || wall === 'right') {
-    x = wall === 'left' ? 0 : room.width - width;
-    z = offset;
-    w = width;
-    d = width;
-  }
-  return [
-    { x, z },
-    { x: x + w, z },
-    { x: x + w, z: z + d },
-    { x, z: z + d },
-  ];
+  return getDoorClearances(room)[0] ?? [];
+}
+
+export function getDoorClearances(room: Room): PointXZ[][] {
+  return getRoomOpenings(room)
+    .filter((opening) => opening.kind === 'door' && opening.swingDirection === 'inward')
+    .map(({ wall, offset, width }) => {
+      const x = wall === 'left' ? 0 : wall === 'right' ? room.width - width : offset,
+        z = wall === 'front' ? room.depth - width : wall === 'back' ? 0 : offset;
+      return [
+        { x, z },
+        { x: x + width, z },
+        { x: x + width, z: z + width },
+        { x, z: z + width },
+      ];
+    });
 }
 
 export function validatePlacement(
@@ -121,17 +145,36 @@ export function validatePlacement(
 ): string[] {
   if (!item.placed) return [];
   const warnings: string[] = [];
+  const elevation = getItemElevation(item, room.height);
   if (!isInsideRoom(item, room))
     warnings.push('Extends beyond the room boundary');
   if (item.height > room.height + EPSILON)
     warnings.push('Taller than the room ceiling');
+  else if (elevation + item.height > room.height + EPSILON)
+    warnings.push('Extends above the room ceiling');
+  const inwardDoors = getRoomOpenings(room)
+    .filter((opening) => opening.kind === 'door' && opening.swingDirection === 'inward');
   if (
     item.type !== 'rug' &&
-    polygonOverlap(getCorners(item), getDoorClearance(room))
+    getDoorClearances(room).some((clearance, index) => {
+      const opening = inwardDoors[index]!;
+      return verticallyOverlaps(item, { height: opening.height, elevationM: opening.sillHeight }, room.height) &&
+        polygonOverlap(getCorners(item), clearance);
+    })
   )
     warnings.push('Blocks the doorway clearance');
+  if (item.type !== 'rug') {
+    const floor: [number, number][] = [[0, 0], [room.width, 0], [room.width, room.depth], [0, room.depth]];
+    for (const opening of getRoomOpenings(room)) {
+      if (opening.openAngleDeg <= 0 ||
+        !verticallyOverlaps(item, { height: opening.height, elevationM: opening.sillHeight }, room.height)) continue;
+      const leaf = getOpeningLeaf(floor, roomOpeningToCanonical(room, opening));
+      if (polygonOverlap(getCorners(item), leaf.footprint.map(([x, z]) => ({ x, z }))))
+        warnings.push(`Blocks an open ${opening.kind}`);
+    }
+  }
   for (const other of items)
-    if (overlaps(item, other)) warnings.push(`Overlaps ${other.name}`);
+    if (overlaps(item, other, room.height)) warnings.push(`Overlaps ${other.name}`);
   return warnings;
 }
 
@@ -162,7 +205,7 @@ export function getRoomMetrics(project: Project) {
   const warnings = getProjectWarnings(project);
   const roomArea = project.room.width * project.room.depth;
   const occupied = project.items
-    .filter((item) => item.placed && item.type !== 'rug')
+    .filter((item) => item.placed && item.type !== 'rug' && getItemElevation(item, project.room.height) <= EPSILON)
     .reduce((sum, item) => sum + item.width * item.depth, 0);
   const invalidArea = warnings.some(
     (warning) =>

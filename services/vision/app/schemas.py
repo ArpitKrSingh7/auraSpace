@@ -43,11 +43,30 @@ class Detection(BaseModel):
 
 # ── /analyze ───────────────────────────────────────────────────────────────
 
+class CameraIntrinsics(BaseModel):
+    """Pinhole calibration in pixels of the oriented source image."""
+    fx: float = Field(..., gt=0, le=1_000_000)
+    fy: float = Field(..., gt=0, le=1_000_000)
+    cx: float
+    cy: float
+
+    @field_validator("fx", "fy", "cx", "cy")
+    @classmethod
+    def finite_intrinsics(cls, value):
+        import math
+        if not math.isfinite(value):
+            raise ValueError("Camera intrinsics must be finite")
+        return value
+
+
 class AnalyzeRequest(BaseModel):
     """Request body for full room analysis."""
     image: str = Field(..., min_length=1, max_length=17_000_000, description="Base64-encoded image (data URI or raw base64)")
     include_depth: bool = Field(False, description="Whether to include depth estimation")
     include_room: bool = Field(False, description="Whether to include room geometry estimation")
+    intrinsics: Optional[CameraIntrinsics] = Field(
+        None, description="Optional calibrated fx, fy, cx, cy in oriented source-image pixels; otherwise a 60 degree horizontal field of view is assumed",
+    )
 
 
 class AnalyzeResponse(BaseModel):

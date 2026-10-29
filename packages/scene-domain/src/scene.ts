@@ -1,5 +1,6 @@
 import { CATALOG, newId } from './legacy/catalog';
 import type { FurnitureItem, Project } from './legacy/types';
+import { canonicalOpeningToRoom, getRoomOpenings, roomOpeningToCanonical } from './legacy/openings';
 import {
   projectDocumentSchema,
   roomSceneSchema,
@@ -91,6 +92,8 @@ export function newPhysicalItem(
     width: evidence(entry.width, 'category-prior'),
     depth: evidence(entry.depth, 'category-prior'),
     height: evidence(entry.height, 'category-prior'),
+    mounting: entry.mounting ?? 'floor',
+    elevationM: entry.elevationM ?? 0,
     representation: category === 'custom' ? 'custom-box' : 'procedural',
     color: entry.color,
     movable: true,
@@ -120,6 +123,8 @@ export function legacyItem(
     width: item.width.meters,
     depth: item.depth.meters,
     height: item.height.meters,
+    mounting: item.mounting ?? 'floor',
+    elevationM: item.elevationM ?? 0,
     color: item.color,
     source: [item.width, item.depth, item.height].every((d) =>
       ['user-measured', 'product-specification'].includes(d.source),
@@ -143,7 +148,8 @@ export function toLegacyProject(doc: ProjectDocument): Project {
   const scene = doc.scene,
     b = bounds(scene),
     layout = activeLayout(scene),
-    door = scene.openings.find((o) => o.kind === 'door');
+    openings = scene.openings.map((o) => canonicalOpeningToRoom(scene.floorPolygonXZ, o)),
+    door = openings.find((o) => o.kind === 'door');
   return {
     id: doc.id,
     name: doc.name,
@@ -155,15 +161,19 @@ export function toLegacyProject(doc: ProjectDocument): Project {
       width: b.width,
       depth: b.depth,
       height: scene.height.meters,
+      dimensionSources: {
+        width: scene.dimensionEvidence.width?.source ?? scene.boundarySource,
+        depth: scene.dimensionEvidence.depth?.source ?? scene.boundarySource,
+        height: scene.height.source,
+      },
       wallColor: scene.wallColor,
       floorColor: scene.floorColor,
       door: {
-        wall: door
-          ? (['back', 'right', 'front', 'left'] as const)[door.wallIndex % 4]
-          : 'front',
-        offset: door?.offsetM ?? 0.2,
-        width: door?.widthM ?? 0.8,
+        wall: door?.wall ?? 'front',
+        offset: door?.offset ?? 0.2,
+        width: door?.width ?? 0.8,
       },
+      openings,
     },
     items: scene.items.map((i) =>
       legacyItem(
@@ -199,26 +209,16 @@ export function migrateLegacyProject(project: Project): ProjectDocument {
   doc.sample = project.sample;
   doc.scene.wallColor = project.room.wallColor;
   doc.scene.floorColor = project.room.floorColor;
-  const door = project.room.door,
-    wallIndex = ({ back: 0, right: 1, front: 2, left: 3 } as const)[door.wall];
-  doc.scene.openings = [
-    {
-      ...doc.scene.openings[0],
-      wallIndex,
-      offsetM: (
-        wallIndex === 2
-          ? project.room.width
-          : wallIndex === 3
-            ? project.room.depth
-            : 0
-      )
-        ? (wallIndex === 2 ? project.room.width : project.room.depth) -
-          door.offset -
-          door.width
-        : door.offset,
-      widthM: door.width,
-    },
-  ];
+  for (const name of ['width', 'depth'] as const) {
+    const source = project.room.dimensionSources?.[name];
+    if (source) doc.scene.dimensionEvidence[name] = evidence(project.room[name], source, source === 'user-measured');
+  }
+  if (project.room.dimensionSources?.height)
+    doc.scene.height = evidence(project.room.height, project.room.dimensionSources.height, project.room.dimensionSources.height === 'user-measured');
+  if (['width', 'depth'].every((name) => project.room.dimensionSources?.[name as 'width' | 'depth'] === 'user-measured'))
+    doc.scene.boundarySource = 'user-measured';
+  doc.scene.openings = getRoomOpenings(project.room)
+    .map((opening) => roomOpeningToCanonical(project.room, opening));
   const current = new Map(project.items.map((i) => [i.id, i]));
   for (const l of project.layouts)
     for (const item of l.items)
@@ -237,6 +237,8 @@ export function migrateLegacyProject(project: Project): ProjectDocument {
       width: evidence(i.width, source, source === 'user-measured'),
       depth: evidence(i.depth, source, source === 'user-measured'),
       height: evidence(i.height, source, source === 'user-measured'),
+      mounting: i.mounting ?? 'floor',
+      elevationM: i.elevationM ?? 0,
     };
   });
   const poses = (items: FurnitureItem[]) =>
@@ -267,6 +269,7 @@ export function migrateLegacyProject(project: Project): ProjectDocument {
     createdAt: project.createdAt,
     qualityWarnings: [],
     mapping: { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 },
+    ...(p.roomProposal ? { roomProposal: p.roomProposal } : {}),
     status:
       p.analysisStatus === 'running'
         ? 'failed'
@@ -327,6 +330,8 @@ export type SceneCommand =
           | 'width'
           | 'depth'
           | 'height'
+          | 'mounting'
+          | 'elevationM'
           | 'color'
           | 'representation'
         >
@@ -367,7 +372,7 @@ export type SceneCommand =
   | { type: 'split-observation'; itemId: string; observationId: string }
   | { type: 'empty-room' };
 export type Outcome<T> =
-  { ok: true; value: T } | { ok: false; message: string };
+  { ok: true; value: T; warnings?: string[] } | { ok: false; message: string };
 export function applyCommand(
   current: RoomScene,
   command: SceneCommand,
@@ -407,7 +412,8 @@ export function applyCommand(
       }
       case 'edit-item': {
         const i =
-          'width' in c.changes || 'depth' in c.changes || 'height' in c.changes
+          'width' in c.changes || 'depth' in c.changes || 'height' in c.changes ||
+          'mounting' in c.changes || 'elevationM' in c.changes
             ? unlocked(c.id)
             : item(c.id);
         Object.assign(i, c.changes);

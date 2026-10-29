@@ -80,6 +80,64 @@ export const CATALOG: CatalogEntry[] = [
     height: 0.8,
     color: '#A4A8B8',
   },
+  {
+    type: 'wardrobe', name: 'Wardrobe / almirah',
+    description: 'A full-height storage cupboard. Adjust these starting dimensions to your own.',
+    width: 1.5, depth: 0.6, height: 2.1, color: '#A7835E',
+  },
+  {
+    type: 'dressing-table', name: 'Dressing table',
+    description: 'A compact vanity with a mirror and drawers. Dimensions are editable estimates.',
+    width: 0.9, depth: 0.45, height: 1.65, color: '#B58A60',
+  },
+  {
+    type: 'mirror', name: 'Wall mirror',
+    description: 'A wall-mounted mirror with an editable bottom elevation.',
+    width: 0.65, depth: 0.05, height: 0.9, color: '#A9BCC0',
+    mounting: 'wall', elevationM: 1,
+  },
+  {
+    type: 'air-conditioner', name: 'Split AC',
+    description: 'An indoor wall unit. Check your unit size and mounting height.',
+    width: 0.95, depth: 0.23, height: 0.3, color: '#E4E4DF',
+    mounting: 'wall', elevationM: 2.1,
+  },
+  {
+    type: 'ceiling-fan', name: 'Ceiling fan',
+    description: 'The full blade footprint; its drop is positioned from the room ceiling.',
+    width: 1.2, depth: 1.2, height: 0.45, color: '#B29A7E',
+    mounting: 'ceiling',
+  },
+  {
+    type: 'desk', name: 'Study desk',
+    description: 'A simple work surface. Set dimensions to match your desk.',
+    width: 1.2, depth: 0.6, height: 0.75, color: '#B58A60',
+  },
+  {
+    type: 'bedside-table', name: 'Bedside table',
+    description: 'A small drawer unit beside the bed, with editable dimensions.',
+    width: 0.45, depth: 0.4, height: 0.5, color: '#A7835E',
+  },
+  {
+    type: 'bookshelf', name: 'Bookshelf',
+    description: 'Open shelves for books and everyday storage.',
+    width: 0.8, depth: 0.3, height: 1.8, color: '#B58A60',
+  },
+  {
+    type: 'shoe-rack', name: 'Shoe rack',
+    description: 'Compact entry storage. Measure its depth with doors closed.',
+    width: 0.8, depth: 0.35, height: 0.9, color: '#A7835E',
+  },
+  {
+    type: 'tv-unit', name: 'TV unit',
+    description: 'A low media console. Edit its size to match your furniture.',
+    width: 1.5, depth: 0.4, height: 0.55, color: '#947454',
+  },
+  {
+    type: 'fridge', name: 'Refrigerator',
+    description: 'An upright refrigerator footprint. Check your appliance dimensions.',
+    width: 0.65, depth: 0.68, height: 1.65, color: '#AAB3B5',
+  },
 ];
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -105,7 +163,7 @@ export function makeItem(
 ): FurnitureItem {
   const entry =
     CATALOG.find((candidate) => candidate.type === type) ??
-    CATALOG[CATALOG.length - 1]!;
+    CATALOG.find((candidate) => candidate.type === 'custom')!;
   return {
     id: newId(),
     type: entry.type,
@@ -113,6 +171,8 @@ export function makeItem(
     width: entry.width,
     depth: entry.depth,
     height: entry.height,
+    mounting: entry.mounting ?? 'floor',
+    elevationM: entry.elevationM ?? 0,
     color: entry.color,
     source: 'estimated',
     x: 0,
@@ -220,7 +280,25 @@ function createSamples(): Project[] {
     sampleItem('sample-bedroom-plant', 'plant', 3.8, 0.45),
     sampleItem('sample-bedroom-cabinet', 'cabinet', 2.1, 4.1, { width: 1.6 }),
   ];
-  return [living, bedroom];
+  const indianBedroom = makeProject('Everyday Indian bedroom', 5.4, 4.6, 2.8);
+  indianBedroom.id = 'sample-indian-bedroom';
+  indianBedroom.sample = true;
+  indianBedroom.cover = 'bedroom';
+  indianBedroom.room.door.offset = 2.7;
+  indianBedroom.items = [
+    sampleItem('sample-indian-bed', 'bed', 2.7, 1.35),
+    sampleItem('sample-indian-bedside', 'bedside-table', 1.55, 0.8),
+    sampleItem('sample-indian-wardrobe', 'wardrobe', 5.05, 1.4, { rotation: 90 }),
+    sampleItem('sample-indian-dressing', 'dressing-table', 4.7, 3.95),
+    sampleItem('sample-indian-desk', 'desk', 0.65, 2.7, { rotation: 90 }),
+    sampleItem('sample-indian-chair', 'chair', 1.4, 2.7, { width: 0.5, depth: 0.5 }),
+    sampleItem('sample-indian-bookshelf', 'bookshelf', 0.55, 0.6),
+    sampleItem('sample-indian-shoes', 'shoe-rack', 0.65, 3.95),
+    sampleItem('sample-indian-ac', 'air-conditioner', 2.7, 0.16),
+    sampleItem('sample-indian-fan', 'ceiling-fan', 2.7, 2.5),
+    sampleItem('sample-indian-rug', 'rug', 2.7, 1.75),
+  ];
+  return [living, bedroom, indianBedroom];
 }
 
 export const sampleProjects: Project[] = createSamples();

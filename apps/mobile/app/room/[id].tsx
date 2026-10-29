@@ -25,6 +25,7 @@ import {
   styles,
 } from '../../src/components/ui';
 import { FurnitureLibrary } from '../../src/features/editor/FurnitureLibrary';
+import { AngleControl } from '../../src/features/editor/AngleControl';
 import { ItemDetails } from '../../src/features/editor/ItemDetails';
 import {
   NativeScene,
@@ -55,6 +56,7 @@ export default function RoomEditor() {
     [selected, setSelected] = React.useState<string | null>(null),
     [placing, setPlacing] = React.useState<string | null>(null),
     [candidate, setCandidate] = React.useState<[number, number] | null>(null),
+    [rotationPreview, setRotationPreview] = React.useState<{ id: string; yawRad: number } | null>(null),
     [sheet, setSheet] = React.useState<
       'details' | 'room' | 'options' | 'layouts' | 'exports' | 'feedback' | null
     >(null),
@@ -149,6 +151,7 @@ export default function RoomEditor() {
   const select = (id: string | null) => {
     if (!placing) {
       setSelected(id);
+      setRotationPreview(null);
       setSheet(null);
     }
   };
@@ -165,6 +168,15 @@ export default function RoomEditor() {
           floorCenterZM: snap ? Math.round(z * 10) / 10 : z,
         },
       });
+  };
+  const rotate = (itemId: string, yawRad: number) => {
+    const latest = useStudio.getState().projects.find((p) => p.id === doc.id)?.scene;
+    if (!latest) return;
+    const pose = activeLayout(latest).placements.find((p) => p.physicalItemId === itemId);
+    if (!pose || pose.locked || !latest.items.find((i) => i.id === itemId)?.movable) return;
+    const normalized = ((yawRad % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    if (Math.abs(Math.atan2(Math.sin(normalized - pose.yawRad), Math.cos(normalized - pose.yawRad))) > 0.0001)
+      execute(doc.id, { type: 'place', placement: { ...pose, yawRad: normalized } });
   };
   const run = (action: () => Promise<unknown>) => {
     if (busy) return;
@@ -195,6 +207,8 @@ export default function RoomEditor() {
         candidate={candidate}
         onSelect={select}
         onMove={move}
+        onRotate={rotate}
+        rotationPreview={rotationPreview}
         onPlace={pick}
         showGrid={grid}
       />
@@ -291,6 +305,8 @@ export default function RoomEditor() {
             candidate={candidate}
             onSelect={select}
             onMove={move}
+            onRotate={rotate}
+            rotationPreview={rotationPreview}
             onPlace={pick}
             showGrid={grid}
           />
@@ -314,6 +330,8 @@ export default function RoomEditor() {
               candidate={candidate}
               onSelect={select}
               onMove={move}
+              onRotate={rotate}
+              rotationPreview={rotationPreview}
               onPlace={pick}
               reset={reset}
               eyeHeight={eyeHeight}
@@ -392,6 +410,16 @@ export default function RoomEditor() {
               </View>
             </>
           ) : item ? (
+            <View style={{ gap: 6 }}>
+            {placement && (
+              <AngleControl
+                label="Clockwise rotation"
+                value={((((-placement.yawRad * 180) / Math.PI) % 360) + 360) % 360}
+                disabled={!item.movable || placement.locked}
+                onPreview={(degrees) => setRotationPreview(degrees === null ? null : { id: item.id, yawRad: (-degrees * Math.PI) / 180 })}
+                onCommit={(degrees) => rotate(item.id, (-degrees * Math.PI) / 180)}
+              />
+            )}
             <View
               style={[
                 styles.row,
@@ -410,23 +438,6 @@ export default function RoomEditor() {
               <Button
                 compact
                 secondary
-                title="Rotate"
-                disabled={!placement || placement.locked}
-                onPress={() => {
-                  if (placement)
-                    execute(doc.id, {
-                      type: 'place',
-                      placement: {
-                        ...placement,
-                        yawRad:
-                          (placement.yawRad - Math.PI / 4) % (Math.PI * 2),
-                      },
-                    });
-                }}
-              />
-              <Button
-                compact
-                secondary
                 title="To tray"
                 disabled={!item.movable || placement?.locked}
                 onPress={() => {
@@ -441,6 +452,7 @@ export default function RoomEditor() {
                 title="✕"
                 onPress={() => setSelected(null)}
               />
+            </View>
             </View>
           ) : (
             <Button

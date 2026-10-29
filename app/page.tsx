@@ -50,7 +50,7 @@ function NewRoomDialog({
     >
       <p className="mb-5 text-sm text-surface-500">
         {photo
-          ? 'Create your room, then import a photo to review detected furniture. Dimensions are editable estimates.'
+          ? 'Import a photo to estimate the visible floor and walls, then review the room scale and detected furniture. Hidden boundaries remain editable.'
           : 'Give your space a name and set its dimensions. You can refine everything in the editor.'}
       </p>
       <form

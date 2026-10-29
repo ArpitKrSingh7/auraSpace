@@ -2,6 +2,7 @@ import {
   type Observation,
   type ProjectDocument,
 } from '@auraspace/scene-domain';
+import { CATALOG } from '@auraspace/scene-domain/legacy/catalog';
 import { useQuery } from '@tanstack/react-query';
 import React from 'react';
 import { Alert, Switch, Text, View } from 'react-native';
@@ -16,7 +17,7 @@ import {
   Sheet,
   styles,
 } from '../../components/ui';
-import { cancelPendingCapture } from '../../services/job-operations';
+import { cancelPendingCapture, queueProcessing } from '../../services/job-operations';
 import { useStudio } from '../../state/studio';
 import { BeforeAfter } from './BeforeAfter';
 import {
@@ -28,6 +29,7 @@ import {
 } from './controller';
 import { MaskEditor } from './MaskEditor';
 import { ProcessingEvidence } from './ProcessingEvidence';
+import { typeEmoji } from '../editor/furniture-library-data';
 export function CaptureReview({
   document: doc,
   captureId,
@@ -42,7 +44,8 @@ export function CaptureReview({
     [editing, setEditing] = React.useState<string | null>(null),
     [linking, setLinking] = React.useState<string | null>(null),
     [removal, setRemoval] = React.useState<string[]>([]),
-    [reviewedJob, setReviewedJob] = React.useState<string | null>(null);
+    [reviewedJob, setReviewedJob] = React.useState<string | null>(null),
+    actionRunning = React.useRef(false);
   const execute = useStudio((s) => s.execute),
     notify = useStudio((s) => s.notify),
     jobId = capture?.jobId;
@@ -66,7 +69,8 @@ export function CaptureReview({
     selected = observations.find((o) => o.id === editing),
     job = query.data;
   const run = (action: () => Promise<unknown>) => {
-    if (busy) return;
+    if (actionRunning.current) return;
+    actionRunning.current = true;
     setBusy(true);
     void action()
       .catch((error) =>
@@ -76,7 +80,10 @@ export function CaptureReview({
             : 'Please retry or continue manually.',
         ),
       )
-      .finally(() => setBusy(false));
+      .finally(() => {
+        actionRunning.current = false;
+        setBusy(false);
+      });
   };
   const update = (o: Observation) =>
     execute(doc.id, { type: 'observation', observation: o });
@@ -107,6 +114,41 @@ export function CaptureReview({
       {capture.qualityWarnings.map((w) => (
         <Body key={w}>{w}</Body>
       ))}
+      <Panel>
+        <Heading small>Build a room draft</Heading>
+        <Body>
+          Estimate the visible floor and supported wall boundaries using indoor
+          depth. Review the source, scale, and any possible openings before
+          applying the draft to your room.
+        </Body>
+        <Button
+          title="Build room from photo"
+          disabled={
+            busy ||
+            (capture.status === 'queued' && !jobId) ||
+            job?.status === 'running' ||
+            job?.status === 'queued'
+          }
+          onPress={() => run(async () => {
+            const nextJob = await queueProcessing(doc.id, [captureId], 'analyze', [], true);
+            setReviewedJob(null);
+            if (nextJob) notify('Room reconstruction queued. Review the completed processing result to see your draft.');
+          })}
+        />
+        {capture.roomProposal && (
+          <>
+            <Body>
+              {capture.roomProposal.status === 'estimated' && capture.roomProposal.source === 'model-estimated'
+                ? `${capture.roomProposal.partial ? 'Partial visible floor' : 'Visible room estimate'} · ${capture.roomProposal.confidence} confidence · ${capture.roomProposal.method.replaceAll('-', ' ')}`
+                : capture.roomProposal.source === 'placeholder'
+                  ? 'This older result contains a manual starting guide. Build a fresh draft or mark the floor manually.'
+                  : 'Room reconstruction needs more evidence. Retake the photo with more floor and a wall junction visible, or mark the floor manually.'}
+            </Body>
+            <Button secondary title="Review room draft & scale" onPress={onReviewRoom} />
+          </>
+        )}
+        <Body>Hidden surfaces remain unverified. Furniture stays at its current size and position until you edit it.</Body>
+      </Panel>
       <View style={[styles.row, { flexWrap: 'wrap' }]}>
         <Button
           title={observations.length ? 'Analyze again' : 'Find furniture'}
@@ -140,6 +182,7 @@ export function CaptureReview({
           }}
         />
       </View>
+      <Body>The library has more categories than photo detection. Add missed pieces manually and choose their category during review.</Body>
       {capture.status === 'queued' && !jobId && (
         <Panel>
           <Body>
@@ -376,24 +419,14 @@ export function CaptureReview({
               }
             />
             <View style={[styles.row, { flexWrap: 'wrap' }]}>
-              {(
-                [
-                  'sofa',
-                  'chair',
-                  'bed',
-                  'table',
-                  'cabinet',
-                  'plant',
-                  'custom',
-                ] as const
-              ).map((category) => (
+              {CATALOG.map((entry) => (
                 <Button
-                  key={category}
+                  key={entry.type}
                   compact
-                  secondary={selected.category !== category}
-                  title={category}
+                  secondary={selected.category !== entry.type}
+                  title={`${typeEmoji[entry.type]} ${entry.name}`}
                   onPress={() =>
-                    update({ ...selected, category, reviewed: true })
+                    update({ ...selected, category: entry.type, reviewed: true })
                   }
                 />
               ))}

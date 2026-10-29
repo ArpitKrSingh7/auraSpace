@@ -20,6 +20,7 @@ import {
   styles,
 } from '../../components/ui';
 import { useStudio } from '../../state/studio';
+import { AngleControl } from './AngleControl';
 export function ItemDetails({
   document: doc,
   itemId,
@@ -38,7 +39,9 @@ export function ItemDetails({
   const placement = activeLayout(doc.scene).placements.find(
       (p) => p.physicalItemId === itemId,
     ),
-    warnings = placement ? placementWarnings(doc.scene, placement) : [];
+    warnings = placement ? placementWarnings(doc.scene, placement) : [],
+    mounting = item.mounting ?? 'floor',
+    placementLocked = !item.movable || !!placement?.locked;
   const editAxis = (axis: 'width' | 'depth' | 'height', meters: number) => {
     const dim: Dimension = {
       ...item[axis],
@@ -94,6 +97,42 @@ export function ItemDetails({
           </Text>
         </View>
       ))}
+      <Heading small>Placement surface</Heading>
+      <Body>Height is measured from the floor to the bottom of the piece. This setting is shared by every layout.</Body>
+      <View style={[styles.row, { justifyContent: 'flex-start', flexWrap: 'wrap' }]}>
+        {(['floor', 'wall', 'ceiling'] as const).map((surface) => (
+          <Button
+            key={surface}
+            compact
+            title={surface[0].toUpperCase() + surface.slice(1)}
+            secondary={mounting !== surface}
+            disabled={placementLocked}
+            onPress={() => execute(doc.id, {
+              type: 'edit-item',
+              id: item.id,
+              changes: { mounting: surface },
+            })}
+          />
+        ))}
+      </View>
+      {mounting === 'ceiling' ? (
+        <Body>Follows the ceiling. Bottom is {Math.max(0, doc.scene.height.meters - item.height.meters).toFixed(2)} m above the floor.</Body>
+      ) : placementLocked ? (
+        <Body>Height above floor, to bottom: {(item.elevationM ?? 0).toFixed(2)} m</Body>
+      ) : (
+        <NumberField
+          label="Height above floor, to bottom (m)"
+          value={item.elevationM ?? 0}
+          min={0}
+          max={12}
+          onChange={(elevationM) => execute(doc.id, {
+            type: 'edit-item',
+            id: item.id,
+            changes: { elevationM },
+          })}
+        />
+      )}
+      {placementLocked && <Body>{!item.movable ? 'Make this fixture movable to change its surface or height.' : 'Unlock this placement to change its surface or height.'}</Body>}
       {placement && (
         <>
           <Heading small>Placement</Heading>
@@ -113,12 +152,11 @@ export function ItemDetails({
               onChange={(floorCenterZM) => updatePose({ floorCenterZM })}
             />
           </View>
-          <NumberField
-            label="Clockwise rotation (degrees)"
+          <AngleControl
+            label="Clockwise rotation"
             value={((((-placement.yawRad * 180) / Math.PI) % 360) + 360) % 360}
-            min={0}
-            max={360}
-            onChange={(degrees) =>
+            disabled={!item.movable || placement.locked}
+            onCommit={(degrees) =>
               updatePose({ yawRad: (-degrees * Math.PI) / 180 })
             }
           />

@@ -4,7 +4,7 @@ Android room planning with a shared scene engine, a private processing backend, 
 
 Start with [RUNNING.md](RUNNING.md) for the complete run guide, required environment variables, local Redis/database settings, and Supabase Storage setup. The only environment file is the root `.env`; the clean-checkout template is in that guide. Supabase Storage is the default.
 
-**Status:** installable Android preview. Native rendering, placement, persistence and service connection have been exercised in an Android emulator. Physical-phone capture, performance, thermal behavior, and independent reconstruction accuracy remain acceptance gates. See [the plan audit](docs/implementation-audit.md) and [Android setup](docs/android-setup.md).
+**Status:** installable Android preview with newer source changes awaiting the postponed APK rebuild. Photo-to-room source now fits a correctable partial floor/wall shell from raw metric depth, with known-length scale calibration and explicit review. Physical-phone behavior and independent real-room accuracy remain acceptance gates. See [reconstruction method and limits](docs/reconstruction-method.md), [the plan audit](docs/implementation-audit.md), and [Android setup](docs/android-setup.md).
 
 ## Quick start
 
@@ -57,15 +57,27 @@ For server-backed operations in the web companion, set `VISION_SERVICE_URL=http:
 
 ## Editor behavior
 
+- **Room from photo → Build room from photo** on web, or **Build room from photo → Review processing result → Review room draft & scale** in native source, produces an approximate visible-floor shell. Check the solid observed-wall and dashed view-limit edges, optionally tap a measured floor reference, then explicitly choose **Use this room draft**. Furniture keeps its dimensions and poses; existing measured values take precedence. No metric depth or stable floor means an honest insufficient-evidence result, with no fabricated corners.
+- This first fitter uses a rectangular room prior. Room height and automatic door/window extraction are not recovered yet; use the existing numeric/opening controls. Independent measured-photo evaluation and multi-view fusion remain pending.
+- The shared library includes wardrobes/almirahs, dressing tables, wall mirrors, study desks, bedside tables, bookshelves, shoe racks, TV units, split ACs, ceiling fans and refrigerators alongside the original furniture. Search aliases such as **almirah**, **AC**, and **study table**, or filter by room/use.
+- Floor, wall and ceiling mounting are explicit. Wall fixtures have an editable bottom height; ceiling fixtures follow room height. Collision and walking checks account for vertical separation. Dimensions begin as editable priors.
+- Custom Box and Board presets cover unusual objects, including thin boards down to 1 cm. Adding a library category does not automatically add a trained detector class.
+
+- **Room → Doors & windows** in the web editor supports multiple openings with independent wall, offset, size, sill height, hinge side, inward/outward swing and opening angle. The Android room sheet exposes the equivalent controls.
+- Select furniture and drag its round rotation handle, or use **Rotate** for an angle control and precise degree entry. A completed drag is one undoable edit. Taps select without needing to move the item.
+- Open door/window leaves are visible in the scene and plan exports. Clearance feedback uses approximate footprints; these controls do not automatically infer hinges or hidden structures from photos.
+
 - **Add furniture** explicitly opens the tray. Select a piece, tap the floor, and confirm placement. Long-press tray dragging has a tap alternative.
 - Selecting or moving a placed item shows compact actions. **Details** explicitly opens measurements, position, identity, locks, and finish controls.
 - Inside, overview and floor plan use the same scene. If native 3D cannot initialize, the editable floor plan is available.
 - Native layouts share physical furniture dimensions and keep independent placements. Fixed fixtures retain their locked pose across layouts.
 - Originals stay in app document storage. Processing produces reviewable proposals and never replaces current measurements or layouts automatically.
-- Source dimensions retain per-axis provenance. Category defaults and placeholder corners are visibly identified; they are not measurements.
+- Source dimensions retain per-axis provenance. Category defaults, model estimates, calibrated estimates and legacy manual corner guides remain distinct from measurements.
 - Native portable ZIP exports include the scene, referenced media, and SHA-256 integrity records. SVG and current-view sharing are also available.
 
 The web companion supports JSON/SVG/PNG exports, keyboard editing, and browser-local persistence. Its legacy layout snapshots retain their original format; import/export between the two clients is not presented as automatic cloud synchronization.
+
+The 29 October editor changes require rebuilding/reinstalling Android to appear in the APK. The existing 25 October preview artifact has not been replaced by these source changes.
 
 ## Verification
 

@@ -67,6 +67,6 @@ test('plan exports escape names and include dimensions and rotated footprints', 
   const svg = exportPlanSvg(project);
   assert.ok(svg.includes('&lt;script&gt; &amp; room'));
   assert.ok(svg.includes('Chair &amp; lamp'));
-  assert.ok(svg.includes('5 m'));
+  assert.match(svg, />5(?:\.0+)? m</);
   assert.ok(!svg.includes('<script>'));
 });

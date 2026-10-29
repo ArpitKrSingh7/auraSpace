@@ -15,7 +15,8 @@ import type {
   SceneProps,
   ViewMode,
 } from '../../domain/types';
-import { validatePlacement } from '../../domain/geometry';
+import { getItemElevation, getRoomOpenings, roomOpeningToCanonical, validatePlacement } from '../../domain/geometry';
+import { getOpeningLeaf } from '@auraspace/scene-domain';
 import { FurnitureModel } from './FurnitureModel';
 
 const FLOOR = new Plane(new Vector3(0, 1, 0), 0);
@@ -53,6 +54,7 @@ export function canWalkTo(
       (item) =>
         item.placed &&
         item.type !== 'rug' &&
+        getItemElevation(item, room.height) < 1.8 &&
         insideFootprint(x, z, item, margin),
     )
   );
@@ -221,37 +223,33 @@ function Wall({
         color={room.wallColor}
       />
     ) : null;
-  const hasDoor = room.door.wall === side;
-  const offset = Math.max(
-    0,
-    Math.min(length - room.door.width, room.door.offset),
-  );
-  const doorWidth = Math.min(room.door.width, length);
-  const doorHeight = Math.min(2.12, room.height * 0.84);
+  const openings = getRoomOpenings(room).filter((opening) => opening.wall === side).sort((a, b) => a.offset - b.offset);
+  // Fill wall intervals around every opening; vertically stacked openings share a span.
+  const cuts = [...new Set([0, length, ...openings.flatMap((opening) => [opening.offset, opening.offset + opening.width])])].sort((a, b) => a - b);
+  const structure = cuts.slice(0, -1).flatMap((start, index) => {
+    const end = cuts[index + 1];
+    const holes = openings.filter((opening) => opening.offset < end - 1e-6 && opening.offset + opening.width > start + 1e-6).sort((a, b) => a.sillHeight - b.sillHeight);
+    const blocks: React.ReactNode[] = [];
+    let bottom = 0;
+    for (const hole of holes) {
+      blocks.push(block(start, end - start, Math.max(0, Math.min(height, hole.sillHeight) - bottom), bottom, `${index}-${hole.id}`));
+      bottom = Math.max(bottom, hole.sillHeight + hole.height);
+    }
+    blocks.push(block(start, end - start, Math.max(0, height - bottom), bottom, `${index}-top`));
+    return blocks;
+  });
+  const baseCuts = openings.filter((opening) => opening.sillHeight < 0.13);
+  const baseSegments: Array<[number, number]> = [];
+  let baseEnd = 0;
+  for (const opening of baseCuts) {
+    if (opening.offset > baseEnd) baseSegments.push([baseEnd, opening.offset - baseEnd]);
+    baseEnd = Math.max(baseEnd, opening.offset + opening.width);
+  }
+  if (baseEnd < length) baseSegments.push([baseEnd, length - baseEnd]);
   return (
     <group>
-      {hasDoor ? (
-        <>
-          {block(0, offset, height, 0, 'a')}
-          {block(
-            offset + doorWidth,
-            length - offset - doorWidth,
-            height,
-            0,
-            'b',
-          )}
-          {block(offset, doorWidth, height - doorHeight, doorHeight, 'header')}
-        </>
-      ) : (
-        block(0, length, height)
-      )}
-      {(!hasDoor
-        ? [[0, length]]
-        : [
-            [0, offset],
-            [offset + doorWidth, length - offset - doorWidth],
-          ]
-      ).map(([start, size], i) =>
+      {structure}
+      {baseSegments.map(([start, size], i) =>
         size > 0.001 ? (
           <Solid
             key={`base-${i}`}
@@ -273,27 +271,28 @@ function Wall({
           />
         ) : null,
       )}
-      {hasDoor && (
-        <Solid
-          at={
-            horizontal
-              ? [
-                  offset + doorWidth / 2,
-                  0.012,
-                  side === 'front' ? room.depth : 0,
-                ]
-              : [
-                  side === 'right' ? room.width : 0,
-                  0.012,
-                  offset + doorWidth / 2,
-                ]
-          }
-          size={
-            horizontal ? [doorWidth, 0.024, 0.21] : [0.21, 0.024, doorWidth]
-          }
-          color="#ab9278"
-        />
-      )}
+      {openings.map((opening) => {
+        const floor: [number, number][] = [[0, 0], [room.width, 0], [room.width, room.depth], [0, room.depth]];
+        const leaf = getOpeningLeaf(floor, roomOpeningToCanonical(room, opening));
+        const h = height < 0.1 ? 0.045 : leaf.heightM;
+        const sill = height < 0.1 ? 0 : leaf.sillHeightM;
+        const trim = Math.min(0.045, leaf.widthM / 5, h / 5);
+        const frameColor = opening.kind === 'door' ? '#c9af8d' : '#edf3ee';
+        return (
+          <group key={opening.id} position={[leaf.center[0], sill + h / 2, leaf.center[1]]} rotation={[0, leaf.yawRad, 0]}>
+            {opening.kind === 'door' || height < 0.1 ? <>
+              <Solid at={[0, 0, 0]} size={[leaf.widthM, h, 0.04]} color={frameColor} />
+              {height >= 0.1 && <Solid at={[leaf.widthM / 2 - Math.min(0.1, leaf.widthM / 4), 0, 0]} size={[0.035, 0.035, 0.12]} color="#675844" />}
+            </> : <>
+              <Solid at={[-leaf.widthM / 2 + trim / 2, 0, 0]} size={[trim, h, 0.05]} color={frameColor} />
+              <Solid at={[leaf.widthM / 2 - trim / 2, 0, 0]} size={[trim, h, 0.05]} color={frameColor} />
+              <Solid at={[0, h / 2 - trim / 2, 0]} size={[leaf.widthM, trim, 0.05]} color={frameColor} />
+              <Solid at={[0, -h / 2 + trim / 2, 0]} size={[leaf.widthM, trim, 0.05]} color={frameColor} />
+              <mesh><boxGeometry args={[leaf.widthM - trim * 2, h - trim * 2, 0.012]} /><meshStandardMaterial color="#a8cad5" transparent opacity={0.38} roughness={0.15} depthWrite={false} /></mesh>
+            </>}
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -330,9 +329,11 @@ function FloorLines({ room, grid }: { room: Room; grid: boolean }) {
 export function SelectionOutline({
   item,
   color = '#3e6658',
+  roomHeight,
 }: {
   item: FurnitureItem;
   color?: string;
+  roomHeight?: number;
 }) {
   const geometry = useMemo(() => {
     const w = item.width / 2 + 0.035,
@@ -374,7 +375,7 @@ export function SelectionOutline({
   }, [item.width, item.depth]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
-    <group rotation={[0, -MathUtils.degToRad(item.rotation), 0]}>
+    <group position={[0, getItemElevation(item, roomHeight), 0]} rotation={[0, -MathUtils.degToRad(item.rotation), 0]}>
       <lineSegments geometry={geometry}>
         <lineBasicMaterial color={color} depthTest={false} />
       </lineSegments>
@@ -421,6 +422,7 @@ export function SceneWorld(props: SceneWorldProps) {
     snap,
     onSelect,
     onMove,
+    onRotate,
     onPlace,
     placing,
     onInteractionChange,
@@ -431,7 +433,9 @@ export function SceneWorld(props: SceneWorldProps) {
     id: string;
     x: number;
     z: number;
+    rotation?: number;
   } | null>(null);
+  const rotationDrag = useRef<{ id: string; startAngle: number; startRotation: number; rotation: number; elevationM: number } | null>(null);
   const [hover, setHover] = useState({ x: room.width / 2, z: room.depth / 2 });
   const drag = useRef<{
     id: string;
@@ -440,16 +444,18 @@ export function SceneWorld(props: SceneWorldProps) {
     moved: boolean;
     x: number;
     z: number;
+    elevationM: number;
   } | null>(null);
   const { invalidate } = useThree();
   useEffect(() => {
     setPreview(null);
     drag.current = null;
+    rotationDrag.current = null;
     onInteractionChange?.(false);
   }, [project.id, mode]);
 
-  const point = (e: ThreeEvent<PointerEvent>) =>
-    e.ray.intersectPlane(FLOOR, new Vector3());
+  const point = (e: ThreeEvent<PointerEvent>, elevationM = 0) =>
+    e.ray.intersectPlane(elevationM ? new Plane(new Vector3(0, 1, 0), -elevationM) : FLOOR, new Vector3());
   const candidate = (item: FurnitureItem, x: number, z: number) => {
     const theta = MathUtils.degToRad(item.rotation),
       halfX =
@@ -475,7 +481,8 @@ export function SceneWorld(props: SceneWorldProps) {
     e.stopPropagation();
     onSelect(item.id);
     if (placing || item.locked || e.button !== 0) return;
-    const p = point(e);
+    const elevationM = getItemElevation(item, room.height);
+    const p = point(e, elevationM);
     if (!p) return;
     drag.current = {
       id: item.id,
@@ -484,6 +491,7 @@ export function SceneWorld(props: SceneWorldProps) {
       moved: false,
       x: item.x,
       z: item.z,
+      elevationM,
     };
     onInteractionChange?.(true);
     (
@@ -491,8 +499,20 @@ export function SceneWorld(props: SceneWorldProps) {
     ).setPointerCapture?.(e.pointerId);
   };
   const move = (e: ThreeEvent<PointerEvent>) => {
-    const p = point(e);
+    const p = point(e, rotationDrag.current?.elevationM ?? drag.current?.elevationM ?? 0);
     if (!p) return;
+    if (rotationDrag.current) {
+      e.stopPropagation();
+      const gesture = rotationDrag.current;
+      const item = project.items.find((candidate) => candidate.id === gesture.id);
+      if (!item || Math.hypot(p.x - item.x, p.z - item.z) < 0.05) return;
+      const angle = Math.atan2(p.z - item.z, p.x - item.x);
+      const delta = Math.atan2(Math.sin(angle - gesture.startAngle), Math.cos(angle - gesture.startAngle));
+      gesture.rotation = ((Math.round(gesture.startRotation + MathUtils.radToDeg(delta)) % 360) + 360) % 360;
+      setPreview({ id: item.id, x: item.x, z: item.z, rotation: gesture.rotation });
+      invalidate();
+      return;
+    }
     if (placing) {
       setHover(candidate(placing, p.x, p.z));
       return;
@@ -509,6 +529,16 @@ export function SceneWorld(props: SceneWorldProps) {
     invalidate();
   };
   const up = (e: ThreeEvent<PointerEvent>) => {
+    if (rotationDrag.current) {
+      e.stopPropagation();
+      const gesture = rotationDrag.current;
+      rotationDrag.current = null;
+      (e.target as unknown as { releasePointerCapture?: (id: number) => void }).releasePointerCapture?.(e.pointerId);
+      if (gesture.rotation !== gesture.startRotation) onRotate?.(gesture.id, gesture.rotation);
+      setPreview(null);
+      onInteractionChange?.(false);
+      return;
+    }
     if (!drag.current) return;
     e.stopPropagation();
     const d = drag.current;
@@ -527,6 +557,7 @@ export function SceneWorld(props: SceneWorldProps) {
       onPointerUp={up}
       onPointerCancel={() => {
         drag.current = null;
+        rotationDrag.current = null;
         setPreview(null);
         onInteractionChange?.(false);
       }}
@@ -595,19 +626,27 @@ export function SceneWorld(props: SceneWorldProps) {
         .filter((i) => i.placed)
         .map((item) => {
           const p = preview?.id === item.id ? preview : item;
+          const displayedItem = p.rotation === undefined ? item : { ...item, rotation: p.rotation };
           return (
             <group
               key={item.id}
               position={[p.x, 0, p.z]}
               onPointerDown={(e) => down(item, e)}
+              onClick={(e) => {
+                // Clicks have their own hit propagation, separate from pointer-down.
+                // Consume this hit so the floor cannot immediately clear selection.
+                e.stopPropagation();
+                if (!placing) onSelect(item.id);
+              }}
             >
-              <FurnitureModel item={item} />
+              <FurnitureModel item={displayedItem} roomHeight={room.height} />
               {selectedId === item.id && (
                 <SelectionOutline
-                  item={item}
+                  item={displayedItem}
+                  roomHeight={room.height}
                   color={
                     validatePlacement(
-                      { ...item, x: p.x, z: p.z },
+                      { ...displayedItem, x: p.x, z: p.z },
                       room,
                       project.items,
                     ).length
@@ -616,14 +655,49 @@ export function SceneWorld(props: SceneWorldProps) {
                   }
                 />
               )}
+              {selectedId === item.id && !item.locked && !placing && onRotate && (
+                <group rotation={[0, -MathUtils.degToRad(displayedItem.rotation), 0]}>
+                  <mesh
+                    position={[0, getItemElevation(item, room.height) + 0.07, -item.depth / 2 - 0.25]}
+                    rotation={[-Math.PI / 2, 0, 0]}
+                    renderOrder={20}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      if (e.button !== 0) return;
+                      const elevationM = getItemElevation(item, room.height);
+                      const hit = point(e, elevationM);
+                      if (!hit) return;
+                      rotationDrag.current = {
+                        id: item.id,
+                        startAngle: Math.atan2(hit.z - item.z, hit.x - item.x),
+                        startRotation: item.rotation,
+                        rotation: item.rotation,
+                        elevationM,
+                      };
+                      drag.current = null;
+                      onInteractionChange?.(true);
+                      (e.target as unknown as { setPointerCapture?: (id: number) => void }).setPointerCapture?.(e.pointerId);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <circleGeometry args={[0.1, 24]} />
+                    <meshBasicMaterial color="#3e6658" depthTest={false} />
+                  </mesh>
+                  <mesh position={[0, getItemElevation(item, room.height) + 0.072, -item.depth / 2 - 0.25]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={21} raycast={() => null}>
+                    <ringGeometry args={[0.048, 0.062, 24]} />
+                    <meshBasicMaterial color="#ffffff" depthTest={false} />
+                  </mesh>
+                </group>
+              )}
             </group>
           );
         })}
       {placing && (
         <group position={[hover.x, 0.015, hover.z]}>
-          <FurnitureModel item={placing} opacity={0.52} />
+          <FurnitureModel item={placing} roomHeight={room.height} opacity={0.52} />
           <SelectionOutline
             item={placing}
+            roomHeight={room.height}
             color={
               validatePlacement(
                 { ...placing, x: hover.x, z: hover.z, placed: true },

@@ -3,6 +3,8 @@ import {
   activeLayout,
   bounds,
   canStand,
+  getOpeningLeaf,
+  getItemElevation,
   legacyItem,
   placementWarnings,
   walkPathClear,
@@ -34,6 +36,8 @@ interface Props {
   placingId: string | null;
   onSelect: (id: string | null) => void;
   onMove: (id: string, x: number, z: number) => void;
+  onRotate: (id: string, yawRad: number) => void;
+  rotationPreview?: { id: string; yawRad: number } | null;
   onPlace: (x: number, z: number) => void;
   reset: number;
   eyeHeight: number;
@@ -77,7 +81,6 @@ function Wall({
       .filter((o) => o.wallIndex === index)
       .sort((a, b) => a.offsetM - b.offsetM),
     blocks: React.ReactNode[] = [];
-  let cursor = 0;
   const block = (
     start: number,
     width: number,
@@ -95,45 +98,66 @@ function Wall({
         />,
       );
   };
-  openings.forEach((o, i) => {
-    block(cursor, o.offsetM - cursor, 0, height, `before-${i}`);
-    block(o.offsetM, o.widthM, 0, Math.min(o.sillHeightM, height), `sill-${i}`);
-    block(
-      o.offsetM,
-      o.widthM,
-      o.sillHeightM + o.heightM,
-      height - o.sillHeightM - o.heightM,
-      `above-${i}`,
-    );
-    if (o.kind === 'window' && height > 0.1)
-      blocks.push(
-        <mesh
-          key={`glass-${i}`}
-          position={[
-            o.offsetM + o.widthM / 2,
-            o.sillHeightM + o.heightM / 2,
-            0,
-          ]}
-        >
-          <boxGeometry args={[o.widthM, o.heightM, 0.03]} />
-          <meshStandardMaterial
-            color="#b8d5d9"
-            transparent
-            opacity={0.3}
-            roughness={0.15}
-          />
-        </mesh>,
-      );
-    cursor = o.offsetM + o.widthM;
+  const divisions = [...new Set([0, length, ...openings.flatMap((o) => [o.offsetM, o.offsetM + o.widthM])])].sort((x, y) => x - y);
+  divisions.slice(0, -1).forEach((start, i) => {
+    const width = divisions[i + 1] - start,
+      middle = start + width / 2,
+      holes = openings.filter((o) => middle > o.offsetM && middle < o.offsetM + o.widthM).sort((x, y) => x.sillHeightM - y.sillHeightM);
+    let bottom = 0;
+    holes.forEach((o, j) => {
+      block(start, width, bottom, Math.min(height, o.sillHeightM) - bottom, `span-${i}-${j}`);
+      bottom = Math.max(bottom, Math.min(height, o.sillHeightM + o.heightM));
+    });
+    block(start, width, bottom, height - bottom, `span-${i}-top`);
   });
-  block(cursor, length - cursor, 0, height, 'end');
+  openings.forEach((o, i) => {
+    if (height > 0.1) {
+      const trim = 0.045;
+      blocks.push(<React.Fragment key={`frame-${i}`}>
+        <Box position={[o.offsetM, o.sillHeightM + o.heightM / 2, 0]} size={[trim, o.heightM + trim, 0.17]} color="#f2eee5" />
+        <Box position={[o.offsetM + o.widthM, o.sillHeightM + o.heightM / 2, 0]} size={[trim, o.heightM + trim, 0.17]} color="#f2eee5" />
+        <Box position={[o.offsetM + o.widthM / 2, o.sillHeightM + o.heightM, 0]} size={[o.widthM, trim, 0.17]} color="#f2eee5" />
+        {o.kind === 'window' && <Box position={[o.offsetM + o.widthM / 2, o.sillHeightM, 0]} size={[o.widthM, trim, 0.17]} color="#f2eee5" />}
+      </React.Fragment>);
+    }
+  });
   return (
+    <>
     <group
       position={[a[0], 0, a[1]]}
       rotation={[0, -Math.atan2(b[1] - a[1], b[0] - a[0]), 0]}
     >
       {blocks}
     </group>
+    {openings.map((opening) => {
+      const leaf = getOpeningLeaf(scene.floorPolygonXZ, opening),
+        w = leaf.widthM, h = leaf.heightM, t = leaf.thicknessM,
+        frame = Math.min(0.045, w / 5, h / 5);
+      return (
+        <group key={`leaf-${opening.id}`} position={[leaf.center[0], leaf.sillHeightM + h / 2, leaf.center[1]]} rotation={[0, leaf.yawRad, 0]}>
+          {opening.kind === 'door' ? (
+            <>
+              <Box position={[0, 0, 0]} size={[w, h, t]} color="#b79a78" />
+              <Box position={[0, 0, t * 0.55]} size={[Math.max(0.04, w - 0.14), Math.max(0.04, h - 0.2), 0.009]} color="#c5ab8d" />
+              <Box position={[w / 2 - Math.min(0.1, w / 4), -h * 0.06, 0]} size={[0.035, 0.035, t + 0.07]} color="#655d4b" />
+            </>
+          ) : (
+            <>
+              <Box position={[-w / 2 + frame / 2, 0, 0]} size={[frame, h, t]} color="#e6eee8" />
+              <Box position={[w / 2 - frame / 2, 0, 0]} size={[frame, h, t]} color="#e6eee8" />
+              <Box position={[0, h / 2 - frame / 2, 0]} size={[w, frame, t]} color="#e6eee8" />
+              <Box position={[0, -h / 2 + frame / 2, 0]} size={[w, frame, t]} color="#e6eee8" />
+              <mesh>
+                <boxGeometry args={[w - frame * 2, h - frame * 2, 0.012]} />
+                <meshStandardMaterial color="#a8ced6" transparent opacity={0.38} roughness={0.18} depthWrite={false} />
+              </mesh>
+              <Box position={[w / 2 - frame * 1.6, 0, t]} size={[0.025, Math.min(0.12, h / 3), 0.03]} color="#6c807c" />
+            </>
+          )}
+        </group>
+      );
+    })}
+    </>
   );
 }
 function RoomFloor({ scene }: { scene: RoomScene }) {
@@ -187,6 +211,7 @@ function World({
       placingId,
       onSelect,
       onMove,
+      onRotate,
       onPlace,
       eyeHeight,
       reset,
@@ -206,8 +231,13 @@ function World({
       id: string;
       dx: number;
       dz: number;
+      startX: number;
+      startZ: number;
       moved: boolean;
+      elevationM: number;
     } | null>(null),
+    rotation = React.useRef<{ id: string; x: number; z: number; last: number; yawRad: number; initialYaw: number; moved: boolean; elevationM: number } | null>(null),
+    [anglePreview, setAnglePreview] = React.useState<{ id: string; yawRad: number } | null>(null),
     [preview, setPreview] = React.useState<{
       id: string;
       x: number;
@@ -225,6 +255,7 @@ function World({
       bridge.current.camera = null;
     };
   }, [camera, set]);
+  React.useEffect(() => () => { interaction.current = false; }, []);
   React.useEffect(() => {
     camera.aspect = size.width / Math.max(1, size.height);
     if (mode === 'inside') {
@@ -316,7 +347,7 @@ function World({
     }
   };
   useFrame((_, delta) => {
-    if (mode !== 'inside' || !walk.current) return;
+    if (mode !== 'inside' || !walk.current || interaction.current) return;
     const [x, z] = walk.current;
     if (!walkPathClear(scene, [camera.position.x, camera.position.z], [x, z])) {
       walk.current = null;
@@ -329,8 +360,8 @@ function World({
       walk.current = null;
     } else invalidate();
   });
-  const point = (event: ThreeEvent<PointerEvent>) =>
-    event.ray.intersectPlane(FLOOR, new Vector3());
+  const point = (event: ThreeEvent<PointerEvent>, elevationM = 0) =>
+    event.ray.intersectPlane(elevationM ? new Plane(new Vector3(0, 1, 0), -elevationM) : FLOOR, new Vector3());
   const down = (p: Placement, e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     if (placingId) return;
@@ -340,36 +371,74 @@ function World({
       !scene.items.find((i) => i.id === p.physicalItemId)?.movable
     )
       return;
-    const hit = point(e);
+    const elevationM = getItemElevation(legacyItem(scene.items.find((item) => item.id === p.physicalItemId)!), scene.height.meters);
+    const hit = point(e, elevationM);
     if (!hit) return;
     drag.current = {
       id: p.physicalItemId,
       dx: p.floorCenterXM - hit.x,
       dz: p.floorCenterZM - hit.z,
+      startX: hit.x,
+      startZ: hit.z,
       moved: false,
+      elevationM,
     };
+    interaction.current = true;
+    (e.target as any).setPointerCapture?.(e.pointerId);
+  };
+  const rotateDown = (p: Placement, e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    if (placingId || p.locked || !scene.items.find((i) => i.id === p.physicalItemId)?.movable) return;
+    const elevationM = getItemElevation(legacyItem(scene.items.find((item) => item.id === p.physicalItemId)!), scene.height.meters);
+    const hit = point(e, elevationM);
+    if (!hit) return;
+    rotation.current = { id: p.physicalItemId, x: p.floorCenterXM, z: p.floorCenterZM,
+      last: Math.atan2(-(hit.x - p.floorCenterXM), -(hit.z - p.floorCenterZM)), yawRad: p.yawRad, initialYaw: p.yawRad, moved: false, elevationM };
+    walk.current = null;
     interaction.current = true;
     (e.target as any).setPointerCapture?.(e.pointerId);
   };
   return (
     <group
       onPointerMove={(e) => {
+        const r = rotation.current;
+        if (r) {
+          e.stopPropagation();
+          const hit = point(e, r.elevationM);
+          if (!hit || Math.hypot(hit.x - r.x, hit.z - r.z) < 0.08) return;
+          const angle = Math.atan2(-(hit.x - r.x), -(hit.z - r.z));
+          r.yawRad += Math.atan2(Math.sin(angle - r.last), Math.cos(angle - r.last));
+          r.last = angle;
+          r.moved ||= Math.abs(r.yawRad - r.initialYaw) > 0.01;
+          if (r.moved) setAnglePreview({ id: r.id, yawRad: r.yawRad });
+          return;
+        }
         const d = drag.current,
-          hit = point(e);
+          hit = point(e, d?.elevationM ?? 0);
         if (placingId && hit) {
           setHover([hit.x, hit.z]);
           return;
         }
         if (!d || !hit) return;
         e.stopPropagation();
-        d.moved = true;
-        setPreview({ id: d.id, x: hit.x + d.dx, z: hit.z + d.dz });
+        d.moved ||= Math.hypot(hit.x - d.startX, hit.z - d.startZ) > 0.025;
+        if (d.moved) setPreview({ id: d.id, x: hit.x + d.dx, z: hit.z + d.dz });
       }}
       onPointerUp={(e) => {
+        const r = rotation.current;
+        if (r) {
+          e.stopPropagation();
+          if (r.moved) onRotate(r.id, r.yawRad);
+          rotation.current = null;
+          interaction.current = false;
+          setAnglePreview(null);
+          (e.target as any).releasePointerCapture?.(e.pointerId);
+          return;
+        }
         const d = drag.current;
         if (!d) return;
         e.stopPropagation();
-        const hit = point(e);
+        const hit = point(e, d.elevationM);
         if (d.moved && hit) onMove(d.id, hit.x + d.dx, hit.z + d.dz);
         drag.current = null;
         interaction.current = false;
@@ -377,6 +446,8 @@ function World({
         (e.target as any).releasePointerCapture?.(e.pointerId);
       }}
       onPointerCancel={() => {
+        rotation.current = null;
+        setAnglePreview(null);
         drag.current = null;
         interaction.current = false;
         setPreview(null);
@@ -439,10 +510,12 @@ function World({
       )}
       {activeLayout(scene).placements.map((p) => {
         const item = scene.items.find((i) => i.id === p.physicalItemId)!;
-        const pose =
+        const movedPose =
           preview?.id === item.id
             ? { ...p, floorCenterXM: preview.x, floorCenterZM: preview.z }
             : p;
+        const previewAngle = anglePreview ?? props.rotationPreview,
+          pose = previewAngle?.id === item.id ? { ...movedPose, yawRad: previewAngle.yawRad } : movedPose;
         const color = placementWarnings(scene, pose).length
           ? '#b45339'
           : '#3e6658';
@@ -451,10 +524,14 @@ function World({
             key={item.id}
             position={[pose.floorCenterXM, 0, pose.floorCenterZM]}
             onPointerDown={(e) => down(p, e)}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!placingId) onSelect(item.id);
+            }}
           >
-            <FurnitureModel item={legacyItem(item, pose)} />
+            <FurnitureModel item={legacyItem(item, pose)} roomHeight={scene.height.meters} />
             {selectedId === item.id && (
-              <group rotation={[0, pose.yawRad, 0]}>
+              <group position={[0, getItemElevation(legacyItem(item), scene.height.meters), 0]} rotation={[0, pose.yawRad, 0]}>
                 <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
                   <planeGeometry
                     args={[item.width.meters + 0.08, item.depth.meters + 0.08]}
@@ -466,6 +543,22 @@ function World({
                     depthWrite={false}
                   />
                 </mesh>
+                {!placingId && item.movable && !pose.locked && (
+                  <group onPointerDown={(e) => rotateDown(p, e)} onClick={(e) => e.stopPropagation()}>
+                    <mesh position={[0, 0.07, -(item.depth.meters / 2 + 0.35) / 2]}>
+                      <boxGeometry args={[0.025, 0.025, item.depth.meters / 2 + 0.35]} />
+                      <meshBasicMaterial color={color} />
+                    </mesh>
+                    <mesh position={[0, 0.08, -(item.depth.meters / 2 + 0.35)]}>
+                      <cylinderGeometry args={[0.115, 0.115, 0.035, 28]} />
+                      <meshBasicMaterial color={color} />
+                    </mesh>
+                    <mesh position={[0, 0.105, -(item.depth.meters / 2 + 0.35)]} rotation={[-Math.PI / 2, 0, 0]}>
+                      <torusGeometry args={[0.065, 0.012, 8, 28]} />
+                      <meshBasicMaterial color="#ffffff" />
+                    </mesh>
+                  </group>
+                )}
               </group>
             )}
           </group>
@@ -478,7 +571,7 @@ function World({
           const pos = props.candidate ?? hover;
           return (
             <group position={[pos[0], 0.015, pos[1]]}>
-              <FurnitureModel item={legacyItem(item)} opacity={0.4} />
+              <FurnitureModel item={legacyItem(item)} roomHeight={scene.height.meters} opacity={0.4} />
             </group>
           );
         })()}

@@ -5,3 +5,8 @@ export * from './scene';
 export * from './schema';
 export * from './spatial';
 export * from './serialization';
+export * from './openings';
+export * from './reconstruction';
+export { getRoomOpenings, roomOpeningToCanonical } from './legacy/openings';
+export type { RoomOpening } from './legacy/types';
+export { getItemElevation } from './legacy/geometry';

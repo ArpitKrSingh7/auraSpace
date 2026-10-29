@@ -6,13 +6,18 @@ import type { FurnitureItem } from '@/domain/types';
 import { validatePlacement } from '@/domain/geometry';
 import { ChevronDown, RotateCw, Trash2, Copy, Lock, Unlock, X, AlertTriangle } from 'lucide-react';
 import { typeEmoji } from '../furniture-icons';
+import { RotationControl } from '../RotationControl';
 
 export function ItemInspector({
   item,
   onClose,
+  onRotationPreview,
+  onRotationEnd,
 }: {
   item: FurnitureItem;
   onClose: () => void;
+  onRotationPreview?: (angle: number) => void;
+  onRotationEnd?: () => void;
 }) {
   const {
     rotateItem,
@@ -24,6 +29,7 @@ export function ItemInspector({
     removeItem,
     returnToTray,
     moveItem,
+    updateItem,
   } = useAppStore();
   const project = useAppStore((s) => s.activeProject());
   const warnings = project
@@ -33,12 +39,18 @@ export function ItemInspector({
   const [width, setWidth] = useState(item.width);
   const [depth, setDepth] = useState(item.depth);
   const [height, setHeight] = useState(item.height);
+  const [elevation, setElevation] = useState(item.elevationM ?? 0);
+  const mounting = item.mounting ?? 'floor';
 
   useEffect(() => {
     setWidth(item.width);
     setDepth(item.depth);
     setHeight(item.height);
   }, [item.width, item.depth, item.height]);
+
+  useEffect(() => {
+    setElevation(item.elevationM ?? 0);
+  }, [item.id, item.elevationM]);
 
   const applySize = () => {
     if (width > 0 && depth > 0 && height > 0) {
@@ -92,6 +104,7 @@ export function ItemInspector({
         {/* Dimensions */}
         <div>
           <label className="label mb-2 block">Dimensions (meters)</label>
+          {item.source !== 'measured' && <p className="mb-2 text-xs text-amber-700">These dimensions are estimates. Replace them with measurements of your piece.</p>}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <span className="text-[10px] text-surface-500">Width</span>
@@ -135,6 +148,44 @@ export function ItemInspector({
           </div>
         </div>
 
+        <div>
+          <p className="label mb-2">Placement surface</p>
+          <div className="grid grid-cols-3 gap-2">
+            {(['floor', 'wall', 'ceiling'] as const).map((surface) => (
+              <button
+                key={surface}
+                disabled={item.locked}
+                aria-pressed={mounting === surface}
+                className={`rounded-lg border py-2 text-xs capitalize disabled:opacity-40 ${mounting === surface ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-surface-200 text-surface-600'}`}
+                onClick={() => updateItem(item.id, { mounting: surface })}
+              >{surface}</button>
+            ))}
+          </div>
+          {mounting === 'ceiling' ? (
+            <p className="mt-2 text-xs text-surface-500">Follows the ceiling. Bottom is {Math.max(0, (project?.room.height ?? 0) - item.height).toFixed(2)} m above the floor.</p>
+          ) : (
+            <label className="mt-3 block text-xs text-surface-500">
+              Height above floor, to bottom (m)
+              <input
+                className="input-field mt-1 text-sm disabled:opacity-50"
+                aria-label="Height above floor, to bottom (meters)"
+                type="number"
+                step={0.05}
+                min={0}
+                max={12}
+                disabled={item.locked}
+                value={elevation}
+                onChange={(event) => setElevation(Number(event.target.value))}
+                onBlur={() => {
+                  if (Number.isFinite(elevation) && elevation >= 0 && elevation <= 12) updateItem(item.id, { elevationM: elevation });
+                  else setElevation(item.elevationM ?? 0);
+                }}
+              />
+            </label>
+          )}
+          {item.locked && <p className="mt-2 text-xs text-surface-500">Unlock this piece to change its placement.</p>}
+        </div>
+
         {/* Position */}
         {item.placed && (
           <div>
@@ -164,17 +215,20 @@ export function ItemInspector({
                   }
                 />
               </div>
-              <div>
-                <span className="text-[10px] text-surface-500">Rotation</span>
-                <div className="flex gap-1">
-                  <span className="input-field text-sm flex items-center">
-                    {item.rotation}°
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
         )}
+
+        <div className="rounded-xl border border-surface-200 bg-surface-50 p-3">
+          <p className="label mb-3">Rotation</p>
+          <RotationControl value={item.rotation} disabled={item.locked}
+            onPreview={onRotationPreview} onCancel={onRotationEnd}
+            onCommit={(rotation) => {
+              if (rotation !== item.rotation) updateItem(item.id, { rotation });
+              onRotationEnd?.();
+            }} />
+          {item.locked && <p className="mt-2 text-xs text-surface-500">Unlock this piece to rotate it.</p>}
+        </div>
 
         {/* Color */}
         <div>

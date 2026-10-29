@@ -5,6 +5,7 @@ import {
 } from '@auraspace/contracts';
 import {
   observationSchema,
+  roomReconstructionProposalSchema,
   type Capture,
   type Observation,
 } from '@auraspace/scene-domain';
@@ -234,11 +235,7 @@ export async function acceptJob(projectId: string, job: JobRecord) {
         ...(preview ? { previewAssetId: preview.id } : {}),
         ...(proposal.roomEstimate
           ? {
-              roomProposal: {
-                floorCornersPx: proposal.roomEstimate.floorCornersPx ?? [],
-                source: proposal.roomEstimate.source,
-                warnings: proposal.roomEstimate.warnings,
-              },
+              roomProposal: roomReconstructionProposalSchema.parse(proposal.roomEstimate),
             }
           : {}),
         qualityWarnings: [

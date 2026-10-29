@@ -8,12 +8,27 @@ import {
 import type { AnalysisProposal, CreateJob } from '@auraspace/contracts';
 import {
   roomSceneSchema,
+  roomReconstructionImageIssues,
+  roomReconstructionProposalSchema,
   type Observation,
+  type RoomReconstructionProposal,
   type RoomScene,
 } from '@auraspace/scene-domain';
 import { createHash } from 'node:crypto';
 
 export class Cancelled extends Error {}
+/** Malformed geometry must never turn into an accepted room or lose source-image coordinates. */
+export function validatedRoomProposal(raw: unknown, width: number, height: number): RoomReconstructionProposal {
+  const parsed = roomReconstructionProposalSchema.safeParse(raw);
+  if (parsed.success && raw && typeof raw === 'object' && 'status' in raw &&
+    parsed.data.source !== 'placeholder' && !roomReconstructionImageIssues(parsed.data, width, height).length)
+    return parsed.data;
+  return {
+    status: 'insufficient-evidence', source: 'unavailable', method: 'invalid-or-missing-room-proposal',
+    partial: true, confidence: 'low', floorCornersPx: [],
+    warnings: ['Room geometry could not be validated. Analyze another view or enter measured room dimensions.'],
+  };
+}
 export function makeProcessor(
   config: Config = configuration(),
   db = database,
@@ -212,6 +227,7 @@ export function makeProcessor(
                 bed: 'bed',
                 'dining table': 'table',
                 'potted plant': 'plant',
+                refrigerator: 'fridge',
               } as Record<string, Observation['category']>
             )[raw.label] ?? 'custom';
           const oid = `obs-${createHash('sha256').update(`${job.id}:${captureId}:${index}`).digest('hex').slice(0, 36)}`;
@@ -309,7 +325,7 @@ export function makeProcessor(
           captureImageId: captureId,
           inputRevision: job.inputRevision,
           observations,
-          roomEstimate: response.room_proposal,
+          roomEstimate: validatedRoomProposal(response.room_proposal, capture.width, capture.height),
           artifacts: artifacts.map((a) => ({
             id: a.id,
             mimeType: a.mimeType,

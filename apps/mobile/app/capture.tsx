@@ -229,7 +229,10 @@ export default function CaptureScreen() {
         title="Review your room"
         onClose={() => setRoomReview(false)}
       >
-        {selected && <CalibrationReview document={doc} captureId={selected} />}
+        {selected && <CalibrationReview document={doc} captureId={selected} onRetake={() => {
+          setRoomReview(false);
+          openCamera();
+        }} />}
         <RoomDetails document={doc} />
       </Sheet>
     </Screen>

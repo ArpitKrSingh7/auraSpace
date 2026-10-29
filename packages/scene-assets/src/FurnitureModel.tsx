@@ -1,93 +1,11 @@
 import type { FurnitureItem } from '@auraspace/scene-domain/legacy/types';
-import { useEffect, useMemo } from 'react';
+import { getItemElevation } from '@auraspace/scene-domain/legacy/geometry';
 import { Color, MathUtils } from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-
-function Rounded({
-  size,
-  at = [0, 0, 0],
-  color,
-  radius = 0.045,
-  opacity = 1,
-}: {
-  size: [number, number, number];
-  at?: [number, number, number];
-  color: string;
-  radius?: number;
-  opacity?: number;
-}) {
-  const geometry = useMemo(
-    () =>
-      new RoundedBoxGeometry(
-        ...size,
-        3,
-        Math.min(radius, ...size.map((v) => v / 3)),
-      ),
-    [size[0], size[1], size[2], radius],
-  );
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <mesh position={at} geometry={geometry} castShadow receiveShadow>
-      <meshStandardMaterial
-        color={color}
-        roughness={0.87}
-        transparent={opacity < 1}
-        opacity={opacity}
-      />
-    </mesh>
-  );
-}
-
-function Leg({
-  x,
-  z,
-  height = 0.18,
-  radius = 0.027,
-  color = '#715541',
-}: {
-  x: number;
-  z: number;
-  height?: number;
-  radius?: number;
-  color?: string;
-}) {
-  return (
-    <mesh position={[x, height / 2, z]} castShadow>
-      <cylinderGeometry args={[radius * 0.82, radius, height, 8]} />
-      <meshStandardMaterial color={color} roughness={0.65} />
-    </mesh>
-  );
-}
-
-function Feet({
-  width,
-  depth,
-  height = 0.18,
-  inset = 0.11,
-  color,
-}: {
-  width: number;
-  depth: number;
-  height?: number;
-  inset?: number;
-  color?: string;
-}) {
-  return (
-    <>
-      {[-1, 1].flatMap((x) =>
-        [-1, 1].map((z) => (
-          <Leg
-            key={`${x},${z}`}
-            x={x * (width / 2 - inset)}
-            z={z * (depth / 2 - inset)}
-            height={height}
-            color={color}
-          />
-        )),
-      )}
-    </>
-  );
-}
+import { Feet, Rounded } from './FurniturePrimitives';
+import {
+  AirConditioner, BedsideTable, Bookshelf, CeilingFan, Desk, DressingTable,
+  Fridge, Mirror, ShoeRack, TvUnit, Wardrobe,
+} from './HouseholdFurniture';
 
 function Sofa({ item, opacity }: { item: FurnitureItem; opacity: number }) {
   const { width: w, depth: d, height: h, color } = item;
@@ -406,12 +324,15 @@ function Rug({ item, opacity }: { item: FurnitureItem; opacity: number }) {
 export function FurnitureModel({
   item,
   opacity = 1,
+  roomHeight,
 }: {
   item: FurnitureItem;
   opacity?: number;
+  roomHeight?: number;
 }) {
   return (
-    <group rotation={[0, -MathUtils.degToRad(item.rotation), 0]}>
+    <group position={[0, getItemElevation(item, roomHeight), 0]}
+      rotation={[0, -MathUtils.degToRad(item.rotation), 0]}>
       {item.type === 'sofa' ? (
         <Sofa item={item} opacity={opacity} />
       ) : item.type === 'chair' ? (
@@ -426,6 +347,28 @@ export function FurnitureModel({
         <Plant item={item} opacity={opacity} />
       ) : item.type === 'rug' ? (
         <Rug item={item} opacity={opacity} />
+      ) : item.type === 'wardrobe' ? (
+        <Wardrobe item={item} opacity={opacity} />
+      ) : item.type === 'dressing-table' ? (
+        <DressingTable item={item} opacity={opacity} />
+      ) : item.type === 'mirror' ? (
+        <Mirror item={item} opacity={opacity} />
+      ) : item.type === 'air-conditioner' ? (
+        <AirConditioner item={item} opacity={opacity} />
+      ) : item.type === 'ceiling-fan' ? (
+        <CeilingFan item={item} opacity={opacity} />
+      ) : item.type === 'desk' ? (
+        <Desk item={item} opacity={opacity} />
+      ) : item.type === 'bedside-table' ? (
+        <BedsideTable item={item} opacity={opacity} />
+      ) : item.type === 'bookshelf' ? (
+        <Bookshelf item={item} opacity={opacity} />
+      ) : item.type === 'shoe-rack' ? (
+        <ShoeRack item={item} opacity={opacity} />
+      ) : item.type === 'tv-unit' ? (
+        <TvUnit item={item} opacity={opacity} />
+      ) : item.type === 'fridge' ? (
+        <Fridge item={item} opacity={opacity} />
       ) : (
         <Rounded
           size={[item.width, item.height, item.depth]}

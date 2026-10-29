@@ -10,6 +10,8 @@ import {
   VisionError,
 } from './vision-core';
 import type { ImageOperation, Progress } from './vision-core';
+import { mapRoomProposalToSource } from './reconstruction-core';
+import type { RoomReconstructionProposal } from '../../packages/scene-domain/src/index';
 export { VisionError } from './vision-core';
 
 const endpoint = process.env.NEXT_PUBLIC_VISION_API_URL
@@ -170,6 +172,25 @@ export async function analyzePhoto(
         ]
       : [];
   });
+}
+
+/** Geometry needs learned metric depth on the vision service; COCO-SSD cannot supply it. */
+export async function analyzeRoomPhoto(
+  photo: Photo,
+  onProgress?: Progress,
+): Promise<RoomReconstructionProposal> {
+  const canvas = await canvasFor(photo, 1280);
+  onProgress?.('Estimating depth, then fitting the visible floor and walls…');
+  const result = await postVision('/api/vision', 'analyze', {
+    image: canvas.toDataURL('image/jpeg', 0.84),
+    include_depth: true,
+    include_room: true,
+  });
+  try {
+    return mapRoomProposalToSource(result.room_proposal, canvas, photo);
+  } catch {
+    throw new VisionError('The service did not return a usable room proposal. Check its version or try another view.');
+  }
 }
 
 export async function processPhoto(

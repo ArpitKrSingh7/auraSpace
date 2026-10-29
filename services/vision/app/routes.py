@@ -38,7 +38,8 @@ from app.preprocessing import (
     normalize_orientation,
     to_grayscale,
 )
-from app.room_analysis import detect_vanishing_points, estimate_floor_plane, estimate_room_boundaries
+from app.room_analysis import detect_vanishing_points, estimate_room_boundaries
+from app.room_reconstruction import reconstruct_room
 from app.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -90,40 +91,56 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
     depth_map = None
     depth_result = None
     depth_warnings = []
-    if req.include_depth:
+    if req.include_depth or req.include_room:
         try:
             depth_result = estimate_depth_result(image)
             depth_map = depth_result.values
             depth_warnings = depth_result.warnings
-            depth_colored = depth_to_visualization(depth_map)
-            depth_vis_uri = encode_image(depth_colored, fmt="png")
+            if req.include_depth:
+                depth_colored = depth_to_visualization(depth_map)
+                depth_vis_uri = encode_image(depth_colored, fmt="png")
         except Exception as exc:
             logger.warning(f"Depth estimation skipped due to error: {exc}")
             depth_warnings = ["Depth could not finish. Review floor corners and use measured dimensions instead."]
 
     # 3. Optional Room Geometry
     room_estimate: dict[str, Any] | None = None
+    room_proposal: dict[str, Any] | None = None
     if req.include_room:
         try:
-            room_estimate = estimate_room_boundaries(image, depth_map)
+            furniture_boxes = [[item.box.x1, item.box.y1, item.box.x2 - item.box.x1,
+                                item.box.y2 - item.box.y1] for item in detections]
+            room_proposal = reconstruct_room(
+                image, depth=depth_map, depth_units=depth_result.units if depth_result else None,
+                boxes=furniture_boxes, intrinsics=req.intrinsics,
+            )
+            # Keep classical diagnostics for existing clients, but not the old
+            # image-border fallback polygon or any relative-depth dimensions.
+            room_estimate = estimate_room_boundaries(image)
+            room_estimate.pop("boundary_polygon", None)
             vps = detect_vanishing_points(image)
             room_estimate["vanishing_points"] = vps
+            room_estimate["reconstruction_method"] = room_proposal["method"]
             if depth_map is not None:
                 room_estimate["depth_units"] = depth_result.units if depth_result else "unknown"
         except Exception as exc:
             logger.warning(f"Room geometry estimation skipped due to error: {exc}")
+            if room_proposal is None:
+                room_proposal = reconstruct_room(image)
+                room_proposal["warnings"].append("Room fitting could not finish. Review the original photo and use measured dimensions.")
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
     return AnalyzeResponse(
         detections=detections,
         depth_map=depth_vis_uri,
-        depth_raw=encode_metric_depth(depth_map) if depth_result and depth_result.units=="meters" else None,
+        depth_raw=encode_metric_depth(depth_map) if req.include_depth and depth_result and depth_result.units=="meters" else None,
         depth_metadata={"units":depth_result.units,"minimum":float(depth_map.min()),"maximum":float(depth_map.max()),"raw_png_unit":"millimeters" if depth_result.units=="meters" else None} if depth_result else None,
         room_estimate=room_estimate,
-        room_proposal={"floorCornersPx": [[w*.15,h*.55],[w*.85,h*.55],[w*.98,h*.98],[w*.02,h*.98]], "source":"placeholder", "warnings":["Floor corners are a review starting point, not reconstructed boundaries. Correct them and enter measured dimensions."]} if req.include_room else None,
-        warnings=["Furniture dimensions use category defaults until measurements are entered.",*depth_warnings],
-        model_versions={"detection":"torchvision-maskrcnn-resnet50-fpn-v2-COCO_V1", "depth":depth_result.model if depth_result else "unavailable" if req.include_depth else "not-requested"},
+        room_proposal=room_proposal,
+        warnings=["Furniture dimensions use category defaults until measurements are entered.", *depth_warnings,
+                  *(room_proposal["warnings"] if room_proposal else [])],
+        model_versions={"detection":"torchvision-maskrcnn-resnet50-fpn-v2-COCO_V1", "depth":depth_result.model if depth_result else "unavailable" if req.include_depth or req.include_room else "not-requested"},
         image_dimensions={"width": w, "height": h},
         processing_time_ms=round(elapsed_ms, 2),
     )

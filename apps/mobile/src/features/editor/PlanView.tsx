@@ -1,6 +1,7 @@
 import {
   activeLayout,
   bounds,
+  getOpeningLeaf,
   legacyItem,
   placementWarnings,
   type RoomScene,
@@ -11,7 +12,7 @@ import {
 } from '@auraspace/scene-domain/legacy/geometry';
 import React from 'react';
 import { PanResponder, View } from 'react-native';
-import Svg, { Line, Polygon, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Polygon, Text as SvgText } from 'react-native-svg';
 import { palette } from '../../components/ui';
 export interface ViewportHandle {
   project: (pageX: number, pageY: number) => [number, number] | null;
@@ -22,6 +23,8 @@ interface Props {
   placingId: string | null;
   onSelect: (id: string | null) => void;
   onMove: (id: string, x: number, z: number) => void;
+  onRotate: (id: string, yawRad: number) => void;
+  rotationPreview?: { id: string; yawRad: number } | null;
   onPlace: (x: number, z: number) => void;
   showGrid?: boolean;
   candidate?: [number, number] | null;
@@ -34,6 +37,8 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
       placingId,
       onSelect,
       onMove,
+      onRotate,
+      rotationPreview,
       onPlace,
       showGrid = true,
       candidate,
@@ -48,6 +53,8 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
         x: number;
         z: number;
       } | null>(null),
+      [anglePreview, setAnglePreview] = React.useState<{ id: string; yawRad: number } | null>(null),
+      rotation = React.useRef<{ id: string; x: number; z: number; last: number; yawRad: number; initialYaw: number; moved: boolean } | null>(null),
       drag = React.useRef<{
         id: string;
         dx: number;
@@ -62,6 +69,19 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
       viewWidth = viewHeight * ratio,
       minX = b.minX + b.width / 2 - viewWidth / 2,
       minZ = b.minZ + b.depth / 2 - viewHeight / 2;
+    const previewAngle = anglePreview ?? rotationPreview;
+    const selectedPlacement = activeLayout(scene).placements.find((p) => p.physicalItemId === selectedId),
+      selectedPose = selectedPlacement && dragPreview?.id === selectedId
+        ? { ...selectedPlacement, floorCenterXM: dragPreview.x, floorCenterZM: dragPreview.z }
+        : selectedPlacement,
+      selectedItem = scene.items.find((i) => i.id === selectedId),
+      selectedYaw = previewAngle?.id === selectedId ? previewAngle.yawRad : selectedPose?.yawRad ?? 0,
+      handleRadius = selectedItem ? selectedItem.depth.meters / 2 + 0.35 : 0,
+      handle = selectedPose && selectedItem?.movable && !selectedPose.locked && !placingId
+        ? { x: selectedPose.floorCenterXM - Math.sin(selectedYaw) * handleRadius,
+            z: selectedPose.floorCenterZM - Math.cos(selectedYaw) * handleRadius,
+            hitRadius: (viewWidth / Math.max(1, layout.width)) * 24 }
+        : null;
     const point = (x: number, y: number): [number, number] | null => {
       const r = size.current;
       if (x < r.x || y < r.y || x > r.x + r.width || y > r.y + r.height)
@@ -78,8 +98,10 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
       placingId,
       onSelect,
       onMove,
+      onRotate,
       onPlace,
       point,
+      handle,
     });
     current.current = {
       scene,
@@ -87,8 +109,10 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
       placingId,
       onSelect,
       onMove,
+      onRotate,
       onPlace,
       point,
+      handle,
     };
     const responder = React.useMemo(
       () =>
@@ -103,12 +127,20 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
               c.onPlace(p[0], p[1]);
               return;
             }
-            const poses = [...activeLayout(c.scene).placements].reverse();
+            const selected = activeLayout(c.scene).placements.find((pose) => pose.physicalItemId === c.selectedId);
+            if (selected && c.handle && Math.hypot(p[0] - c.handle.x, p[1] - c.handle.z) <= c.handle.hitRadius) {
+              rotation.current = { id: selected.physicalItemId, x: selected.floorCenterXM, z: selected.floorCenterZM,
+                last: Math.atan2(-(p[0] - selected.floorCenterXM), -(p[1] - selected.floorCenterZM)),
+                yawRad: selected.yawRad, initialYaw: selected.yawRad, moved: false };
+              return;
+            }
+            const poses = [...activeLayout(c.scene).placements].reverse().sort((a, b) =>
+              Number(c.scene.items.find((item) => item.id === a.physicalItemId)?.category === 'rug') -
+              Number(c.scene.items.find((item) => item.id === b.physicalItemId)?.category === 'rug'));
             const found = poses.find((pose) => {
               const i = c.scene.items.find(
                 (i) => i.id === pose.physicalItemId,
               )!;
-              if (i.category === 'rug') return false;
               return pointInFootprint(p[0], p[1], legacyItem(i, pose));
             });
             c.onSelect(found?.physicalItemId ?? null);
@@ -127,6 +159,17 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
               };
           },
           onPanResponderMove: (e) => {
+            const r = rotation.current;
+            if (r) {
+              const p = current.current.point(e.nativeEvent.pageX, e.nativeEvent.pageY);
+              if (!p || Math.hypot(p[0] - r.x, p[1] - r.z) < 0.08) return;
+              const angle = Math.atan2(-(p[0] - r.x), -(p[1] - r.z));
+              r.yawRad += Math.atan2(Math.sin(angle - r.last), Math.cos(angle - r.last));
+              r.last = angle;
+              r.moved ||= Math.abs(r.yawRad - r.initialYaw) > 0.01;
+              if (r.moved) setAnglePreview({ id: r.id, yawRad: r.yawRad });
+              return;
+            }
             const d = drag.current;
             if (!d) return;
             const p = current.current.point(
@@ -142,6 +185,10 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
             setDragPreview({ id: d.id, x: p[0] + d.dx, z: p[1] + d.dz });
           },
           onPanResponderRelease: (e) => {
+            const r = rotation.current;
+            if (r?.moved) current.current.onRotate(r.id, r.yawRad);
+            rotation.current = null;
+            setAnglePreview(null);
             const d = drag.current,
               p = current.current.point(
                 e.nativeEvent.pageX,
@@ -153,6 +200,8 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
             setDragPreview(null);
           },
           onPanResponderTerminate: () => {
+            rotation.current = null;
+            setAnglePreview(null);
             drag.current = null;
             setDragPreview(null);
           },
@@ -224,10 +273,14 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
                 ],
               len = Math.hypot(c[0] - a[0], c[1] - a[1]),
               ux = (c[0] - a[0]) / len,
-              uz = (c[1] - a[1]) / len;
+              uz = (c[1] - a[1]) / len,
+              leaf = getOpeningLeaf(scene.floorPolygonXZ, o),
+              closedEnd = leaf.hingeSide === 'start' ? leaf.closedEnd : leaf.closedStart,
+              cross = (closedEnd[0] - leaf.hinge[0]) * (leaf.end[1] - leaf.hinge[1]) - (closedEnd[1] - leaf.hinge[1]) * (leaf.end[0] - leaf.hinge[0]),
+              color = o.kind === 'window' ? '#639aa3' : '#8c7154';
             return (
+              <React.Fragment key={o.id}>
               <Line
-                key={o.id}
                 x1={a[0] + ux * o.offsetM}
                 y1={a[1] + uz * o.offsetM}
                 x2={a[0] + ux * (o.offsetM + o.widthM)}
@@ -235,6 +288,13 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
                 stroke={o.kind === 'window' ? '#8bbdc4' : '#f5f1e6'}
                 strokeWidth={0.065}
               />
+              {leaf.openAngleDeg > 0.01 && (
+                <Path d={`M ${closedEnd.join(' ')} A ${o.widthM} ${o.widthM} 0 0 ${cross > 0 ? 1 : 0} ${leaf.end.join(' ')}`}
+                  fill="none" stroke={color} strokeWidth={0.012} strokeDasharray="0.04 0.035" opacity={0.75} />
+              )}
+              <Line x1={leaf.hinge[0]} y1={leaf.hinge[1]} x2={leaf.end[0]} y2={leaf.end[1]} stroke={color} strokeWidth={o.kind === 'door' ? 0.045 : 0.035} />
+              <Circle cx={leaf.hinge[0]} cy={leaf.hinge[1]} r={0.035} fill={color} />
+              </React.Fragment>
             );
           })}
           {[...activeLayout(scene).placements]
@@ -251,7 +311,7 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
             )
             .map((p) => {
               const item = scene.items.find((i) => i.id === p.physicalItemId)!;
-              const pose =
+              const movedPose =
                 dragPreview?.id === item.id
                   ? {
                       ...p,
@@ -259,6 +319,7 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
                       floorCenterZM: dragPreview.z,
                     }
                   : p;
+              const pose = previewAngle?.id === item.id ? { ...movedPose, yawRad: previewAngle.yawRad } : movedPose;
               const corners = getCorners(legacyItem(item, pose));
               const warnings = placementWarnings(scene, pose);
               return (
@@ -288,6 +349,13 @@ export const PlanView = React.forwardRef<ViewportHandle, Props>(
                 </React.Fragment>
               );
             })}
+          {handle && selectedPose && (
+            <>
+              <Line x1={selectedPose.floorCenterXM} y1={selectedPose.floorCenterZM} x2={handle.x} y2={handle.z} stroke={palette.brand} strokeWidth={0.022} />
+              <Circle cx={handle.x} cy={handle.z} r={Math.max(0.07, handle.hitRadius * 0.55)} fill={palette.brand} stroke="white" strokeWidth={0.025} />
+              <SvgText x={handle.x} y={handle.z + 0.035} textAnchor="middle" fontSize={0.12} fill="white">↻</SvgText>
+            </>
+          )}
           {placingId &&
             candidate &&
             (() => {

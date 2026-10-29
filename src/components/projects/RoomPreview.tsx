@@ -1,5 +1,5 @@
 import type { Project } from '@/domain/types';
-import { getCorners } from '@/domain/geometry';
+import { getCorners, getItemElevation } from '@/domain/geometry';
 
 /** A lightweight preview of the project's actual scene, without starting WebGL. */
 export function RoomPreview({
@@ -86,7 +86,9 @@ export function RoomPreview({
         )
         .map((item) => {
           const corners = getCorners(item);
-          const h = Math.min(item.height, 1.1);
+          const heightScale = wallHeight / room.height;
+          const base = getItemElevation(item, room.height) * heightScale;
+          const h = base + item.height * heightScale;
           return (
             <g
               key={item.id}
@@ -104,8 +106,8 @@ export function RoomPreview({
                 <polygon
                   key={n}
                   points={polygon([
-                    point(corners[n].x, corners[n].z),
-                    point(corners[(n + 1) % 4].x, corners[(n + 1) % 4].z),
+                    point(corners[n].x, corners[n].z, base),
+                    point(corners[(n + 1) % 4].x, corners[(n + 1) % 4].z, base),
                     point(corners[(n + 1) % 4].x, corners[(n + 1) % 4].z, h),
                     point(corners[n].x, corners[n].z, h),
                   ])}

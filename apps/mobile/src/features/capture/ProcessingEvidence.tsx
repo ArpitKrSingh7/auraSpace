@@ -23,19 +23,22 @@ export function ProcessingEvidence({
 }) {
   const [open, setOpen] = React.useState(false),
     [busy, setBusy] = React.useState(false),
+    running = React.useRef(false),
     capture = document.scene.captures.find((c) => c.id === captureId);
   if (!capture) return null;
   const run = (
-    operation?:
+    operation:
       'grayscale' | 'contrast' | 'clahe' | 'edges' | 'contours' | 'histogram',
   ) => {
+    if (running.current || disabled) return;
+    running.current = true;
     setBusy(true);
     void queueProcessing(
       document.id,
       [captureId],
-      operation ? 'process' : 'analyze',
+      'process',
       [],
-      !operation,
+      false,
       operation,
     )
       .catch((e) =>
@@ -47,7 +50,10 @@ export function ProcessingEvidence({
               : 'Try processing again when connected.',
           ),
       )
-      .finally(() => setBusy(false));
+      .finally(() => {
+        running.current = false;
+        setBusy(false);
+      });
   };
   return (
     <Panel>
@@ -59,9 +65,9 @@ export function ProcessingEvidence({
       {open && (
         <>
           <Body>
-            Optional inspection tools. They do not change your source photo,
-            furniture dimensions, or room layout. Review the completed job above
-            to keep its output.
+            Inspect intermediate photo and depth evidence here. Review the
+            completed job above to keep its output; use Review room draft &amp;
+            scale to check and apply room geometry.
           </Body>
           <View
             style={[
@@ -89,15 +95,10 @@ export function ProcessingEvidence({
               />
             ))}
           </View>
-          <Button
-            secondary
-            title="Analyze with indoor depth"
-            disabled={disabled || busy}
-            onPress={() => run()}
-          />
           <Body>
-            Depth uses a server model when configured. Learned estimates require
-            measurements; a color map alone does not establish room size.
+            Build room from photo requests indoor depth from the processing
+            server. Its room proposal uses the available floor evidence;
+            a depth color map alone does not establish measured room size.
           </Body>
           {capture.processingEvidence && (
             <View style={{ gap: 5 }}>

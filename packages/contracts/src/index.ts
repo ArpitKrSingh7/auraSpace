@@ -3,13 +3,16 @@ import {
   maskSchema,
   observationSchema,
   projectDocumentSchema,
+  roomReconstructionProposalSchema,
   roomSceneSchema,
+  type RoomReconstructionProposal,
 } from '@auraspace/scene-domain';
 import { z } from 'zod';
 export {
   maskSchema,
   observationSchema,
   projectDocumentSchema,
+  roomReconstructionProposalSchema,
   roomSceneSchema,
 };
 export const jobStage = z.enum([
@@ -117,14 +120,7 @@ export interface AnalysisProposal {
   captureImageId: string;
   inputRevision: number;
   observations: z.infer<typeof observationSchema>[];
-  roomEstimate?: {
-    floorCornersPx: Array<[number, number]>;
-    widthM?: number;
-    depthM?: number;
-    heightM?: number;
-    source: 'model-estimated' | 'placeholder';
-    warnings: string[];
-  };
+  roomEstimate?: RoomReconstructionProposal;
   artifacts: MediaManifestEntry[];
   warnings: string[];
   modelVersions: Record<string, string>;

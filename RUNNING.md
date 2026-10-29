@@ -88,6 +88,14 @@ pnpm dev
 
 Open **http://localhost:3000**. The web companion stores its rooms in browser-local storage; native cloud restore is still part of the completion roadmap. For manual web editing alone, only `pnpm dev` is needed. Keep using services already running instead of starting another process on the same port.
 
+### Room reconstruction with fewer services
+
+For **web photo-to-room review**, run only the web app and vision service (terminals 1 and 4). PostgreSQL, Redis, API and worker are not needed for this browser-local flow. Set `VISION_SERVICE_URL=http://127.0.0.1:8000` in root `.env`. The vision script enables the pinned indoor metric-depth model when its downloaded directory exists; heuristic depth cannot produce a metric room draft.
+
+Open **Room from photo**, upload a real room photo, then **Build room from photo**. Review the partial outline: solid edges have observed-wall support; dashed edges are visibility limits. Optionally choose two floor points and enter their measured separation, or enter known room dimensions. **Use this room draft** applies it explicitly and preserves furniture poses. Height and doors/windows currently need the manual room controls. Unsupported photos retain a no-evidence result instead of placeholder corners. [Method and limits](docs/reconstruction-method.md) explains the assumptions.
+
+Native photo jobs use the queued API/worker flow; these source features will appear in Android after the deferred rebuild. On Vercel, configure `VISION_SERVICE_URL` to the reachable HTTPS vision service. Python models run separately from the Vercel web deployment; `127.0.0.1` would refer to the hosted web runtime itself. The synchronous web proxy has a 50-second upstream timeout, so cold model loading or slow CPU inference can require retry; native jobs remain asynchronous.
+
 ## 4. Use your Android phone
 
 1. Transfer `artifacts/auraspace-android-preview.apk` to your phone and install it. This APK is a local build artifact, not included in a fresh clone; [Android setup](docs/android-setup.md) explains how to build it.

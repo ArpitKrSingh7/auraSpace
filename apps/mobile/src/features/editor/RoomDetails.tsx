@@ -1,6 +1,7 @@
 import {
   bounds,
   evidence,
+  getOpeningLeaf,
   type Opening,
   type ProjectDocument,
 } from '@auraspace/scene-domain';
@@ -16,6 +17,7 @@ import {
   styles,
 } from '../../components/ui';
 import { useStudio } from '../../state/studio';
+import { AngleControl } from './AngleControl';
 export function RoomDetails({ document: doc }: { document: ProjectDocument }) {
   const scene = doc.scene,
     b = bounds(scene),
@@ -73,7 +75,7 @@ export function RoomDetails({ document: doc }: { document: ProjectDocument }) {
   const editOpening = (o: Opening, changes: Partial<Opening>) =>
     execute(doc.id, {
       type: 'opening',
-      opening: { ...o, ...changes, source: 'user-measured' },
+      opening: { ...o, ...changes, source: ['wallIndex', 'offsetM', 'widthM', 'heightM', 'sillHeightM'].some((key) => key in changes) ? 'user-measured' : o.source },
     });
   const addOpening = (kind: 'door' | 'window') => {
     for (
@@ -105,6 +107,9 @@ export function RoomDetails({ document: doc }: { document: ProjectDocument }) {
                 : Math.min(1.1, scene.height.meters - 0.5),
             sillHeightM: kind === 'door' ? 0 : 0.5,
             source: 'placeholder',
+            hingeSide: 'start',
+            swingDirection: 'inward',
+            openAngleDeg: 0,
             ...(kind === 'door' ? { doorSwing: 'inward-start' as const } : {}),
           },
         });
@@ -188,7 +193,15 @@ export function RoomDetails({ document: doc }: { document: ProjectDocument }) {
         </View>
       ))}
       <Heading small>Doors & windows</Heading>
-      {scene.openings.map((o, index) => (
+      {scene.openings.map((o, index) => {
+        const leaf = getOpeningLeaf(scene.floorPolygonXZ, o),
+          a = scene.floorPolygonXZ[o.wallIndex],
+          c = scene.floorPolygonXZ[(o.wallIndex + 1) % scene.floorPolygonXZ.length],
+          wallLength = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        const orientation = (hingeSide: 'start' | 'end', swingDirection: 'inward' | 'outward') =>
+          editOpening(o, { hingeSide, swingDirection,
+            ...(o.kind === 'door' ? { doorSwing: swingDirection === 'outward' ? 'outward' : hingeSide === 'end' ? 'inward-end' : 'inward-start' } : {}) });
+        return (
         <Panel key={o.id}>
           <Heading small>
             {o.kind === 'door' ? 'Door' : 'Window'} {index + 1}
@@ -198,19 +211,27 @@ export function RoomDetails({ document: doc }: { document: ProjectDocument }) {
             value={o.wallIndex + 1}
             min={1}
             max={scene.floorPolygonXZ.length}
-            onChange={(v) => editOpening(o, { wallIndex: Math.round(v) - 1 })}
+            onChange={(v) => {
+              const wallIndex = Math.round(v) - 1,
+                start = scene.floorPolygonXZ[wallIndex],
+                end = scene.floorPolygonXZ[(wallIndex + 1) % scene.floorPolygonXZ.length],
+                length = Math.hypot(end[0] - start[0], end[1] - start[1]),
+                widthM = Math.min(o.widthM, length);
+              editOpening(o, { wallIndex, widthM, offsetM: Math.min(o.offsetM, Math.max(0, length - widthM)) });
+            }}
           />
           <View style={styles.row}>
             <NumberField
               label="Offset along wall (m)"
               value={o.offsetM}
+              max={Math.max(0, wallLength - o.widthM)}
               onChange={(v) => editOpening(o, { offsetM: v })}
             />
             <NumberField
               label="Opening width (m)"
               value={o.widthM}
               min={0.1}
-              max={10}
+              max={Math.min(10, wallLength - o.offsetM)}
               onChange={(v) => editOpening(o, { widthM: v })}
             />
           </View>
@@ -219,32 +240,46 @@ export function RoomDetails({ document: doc }: { document: ProjectDocument }) {
               label="Opening height (m)"
               value={o.heightM}
               min={0.1}
-              max={12}
+              max={scene.height.meters - o.sillHeightM}
               onChange={(v) => editOpening(o, { heightM: v })}
             />
             <NumberField
               label="Sill height (m)"
               value={o.sillHeightM}
               min={0}
-              max={12}
+              max={scene.height.meters - o.heightM}
               onChange={(v) => editOpening(o, { sillHeightM: v })}
             />
           </View>
-          {o.kind === 'door' && (
-            <View style={[styles.row, { flexWrap: 'wrap' }]}>
-              {(['inward-start', 'inward-end', 'outward'] as const).map(
-                (doorSwing) => (
+          <AngleControl
+            label={`${o.kind === 'door' ? 'Door' : 'Window'} opening angle`}
+            value={leaf.openAngleDeg}
+            max={o.kind === 'door' ? 170 : 90}
+            onCommit={(openAngleDeg) => editOpening(o, { openAngleDeg })}
+          />
+          <View style={[styles.row, { justifyContent: 'flex-start', flexWrap: 'wrap' }]}>
+            <Button compact secondary={leaf.openAngleDeg !== 0} title="Closed" onPress={() => { if (leaf.openAngleDeg !== 0) editOpening(o, { openAngleDeg: 0 }); }} />
+            <Button compact secondary={leaf.openAngleDeg !== 90} title="Open 90°" onPress={() => { if (leaf.openAngleDeg !== 90) editOpening(o, { openAngleDeg: 90 }); }} />
+          </View>
+          <Body>Hinge position along this wall</Body>
+          <View style={[styles.row, { justifyContent: 'flex-start', flexWrap: 'wrap' }]}>
+              {(['start', 'end'] as const).map(
+                (hingeSide) => (
                   <Button
-                    key={doorSwing}
+                    key={hingeSide}
                     compact
-                    secondary={o.doorSwing !== doorSwing}
-                    title={doorSwing.replace('-', ' ')}
-                    onPress={() => editOpening(o, { doorSwing })}
+                    secondary={leaf.hingeSide !== hingeSide}
+                    title={hingeSide === 'start' ? 'Start side' : 'End side'}
+                    onPress={() => { if (leaf.hingeSide !== hingeSide) orientation(hingeSide, leaf.swingDirection); }}
                   />
                 ),
               )}
-            </View>
-          )}
+          </View>
+          <View style={[styles.row, { justifyContent: 'flex-start', flexWrap: 'wrap' }]}>
+            {(['inward', 'outward'] as const).map((swingDirection) => (
+              <Button key={swingDirection} compact secondary={leaf.swingDirection !== swingDirection} title={`Opens ${swingDirection}`} onPress={() => { if (leaf.swingDirection !== swingDirection) orientation(leaf.hingeSide, swingDirection); }} />
+            ))}
+          </View>
           <Button
             secondary
             compact
@@ -254,7 +289,7 @@ export function RoomDetails({ document: doc }: { document: ProjectDocument }) {
             }
           />
         </Panel>
-      ))}
+      );})}
       <View style={styles.row}>
         <Button secondary title="Add door" onPress={() => addOpening('door')} />
         <Button

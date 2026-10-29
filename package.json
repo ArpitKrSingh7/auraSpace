@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "tsc --noEmit",
-    "test": "node --import ./tests/register.mjs --test tests/*.test.mjs",
+    "test": "node --import ./tests/register.mjs tests/run.mjs",
     "typecheck": "tsc --noEmit",
     "dev:android": "pnpm --filter @auraspace/mobile start",
     "dev:api": "node --env-file=.env --import tsx --watch apps/api/src/index.ts",
@@ -15,9 +15,10 @@
     "typecheck:all": "pnpm typecheck && pnpm -r --if-present typecheck",
     "db:generate": "prisma generate --schema apps/api/prisma/schema.prisma",
     "db:migrate": "node --env-file=.env node_modules/prisma/build/index.js migrate deploy --schema apps/api/prisma/schema.prisma",
-    "test:domain": "node --import ./tests/register.mjs --test tests/*.test.mjs",
+    "test:domain": "node --import ./tests/register.mjs tests/run.mjs",
     "check:env": "node --env-file=.env --import tsx scripts/check-env.ts",
-    "verify:storage": "node --env-file=.env --import tsx scripts/verify-storage.ts"
+    "verify:storage": "node --env-file=.env --import tsx scripts/verify-storage.ts",
+    "verify:reconstruction": "node --import ./tests/register.mjs scripts/verify-room-reconstruction.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.88.0",

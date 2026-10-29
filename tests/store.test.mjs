@@ -97,6 +97,23 @@ test('invalid dimensions and coordinates cannot corrupt a room', () => {
   assert.deepEqual(project().items[0], item);
   state().updateRoom({ width: 1 });
   assert.ok(project().room.door.offset + project().room.door.width <= 1);
+  assert.equal(project().room.dimensionSources.width, 'user-measured');
+});
+
+test('room estimates keep their source and undo restores earlier measured dimensions', () => {
+  state().createProject('Room provenance', 5, 4, 2.8);
+  state().updateRoom({ wallColor: '#112233' });
+  assert.equal(project().room.dimensionSources?.width, undefined);
+  state().updateRoom({ width: 6 });
+  assert.equal(project().room.dimensionSources.width, 'user-measured');
+  state().updateRoom({ width: 7, dimensionSources: { ...project().room.dimensionSources, width: 'model-estimated' } });
+  assert.equal(project().room.dimensionSources.width, 'model-estimated');
+  state().undo();
+  assert.equal(project().room.width, 6);
+  assert.equal(project().room.dimensionSources.width, 'user-measured');
+  state().redo();
+  assert.equal(project().room.width, 7);
+  assert.equal(project().room.dimensionSources.width, 'model-estimated');
 });
 
 test('imports never overwrite existing project IDs and layouts can be restored', () => {

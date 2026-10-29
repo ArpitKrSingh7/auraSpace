@@ -1,9 +1,11 @@
 import { normalizeRotation } from './geometry';
 import { DEFAULT_SETTINGS } from './catalog';
-import type { Detection, FurnitureItem, FurnitureType, LayoutSnapshot, Photo, Project, Room, Settings } from './types';
+import { FURNITURE_TYPES } from './types';
+import type { Detection, FurnitureItem, LayoutSnapshot, Photo, Project, Room, RoomOpening, Settings } from './types';
+import { dimensionSources, roomReconstructionImageIssues, roomReconstructionProposalSchema } from '../../packages/scene-domain/src/schema';
 
 export const MAX_IMPORT_BYTES = 24 * 1024 * 1024;
-const TYPES: FurnitureType[] = ['sofa', 'chair', 'bed', 'table', 'cabinet', 'plant', 'rug', 'custom'];
+const TYPES = FURNITURE_TYPES;
 
 export class ValidationError extends Error {
   constructor(message: string) { super(message); this.name = 'ValidationError'; }
@@ -67,15 +69,54 @@ export function validateRoom(input: unknown): Room {
   const room = record(input, 'Room');
   const width = number(room.width, 'Room width', 1, 40);
   const depth = number(room.depth, 'Room depth', 1, 40);
+  const height = number(room.height, 'Room height', 1.5, 12);
   const door = record(room.door, 'Door');
   const wall = choice(door.wall, ['front', 'back', 'left', 'right'] as const, 'Door wall');
   const wallLength = wall === 'front' || wall === 'back' ? width : depth;
-  const doorWidth = number(door.width, 'Door width', 0.3, Math.min(3, wallLength));
+  const doorWidth = number(door.width, 'Door width', room.openings === undefined ? 0.3 : 0.1,
+    Math.min(room.openings === undefined ? 3 : 10, wallLength));
   const offset = number(door.offset, 'Door offset', 0, wallLength - doorWidth + 0.000001);
+  const openings: RoomOpening[] | undefined = room.openings === undefined ? undefined :
+    array(room.openings, 'Openings', 40).map((input) => {
+      const opening = record(input, 'Opening');
+      const id = text(opening.id, 'Opening ID', 128);
+      if (!/^[a-zA-Z0-9_.:-]+$/.test(id)) throw new ValidationError('Opening ID contains unsupported characters.');
+      const kind = choice(opening.kind, ['door', 'window'] as const, 'Opening kind');
+      const openingWall = choice(opening.wall, ['front', 'back', 'left', 'right'] as const, 'Opening wall');
+      const length = openingWall === 'front' || openingWall === 'back' ? width : depth;
+      const openingWidth = number(opening.width, 'Opening width', 0.1, Math.min(10, length));
+      const openingHeight = number(opening.height, 'Opening height', 0.1, height);
+      return {
+        id, kind, wall: openingWall,
+        offset: number(opening.offset, 'Opening offset', 0, length - openingWidth + 0.000001),
+        width: openingWidth, height: openingHeight,
+        sillHeight: number(opening.sillHeight ?? 0, 'Opening sill height', 0, height - openingHeight + 0.000001),
+        hingeSide: choice(opening.hingeSide ?? 'start', ['start', 'end'] as const, 'Opening hinge side'),
+        swingDirection: choice(opening.swingDirection ?? 'inward', ['inward', 'outward'] as const, 'Opening swing direction'),
+        openAngleDeg: number(opening.openAngleDeg ?? 0, 'Opening angle', 0, kind === 'door' ? 170 : 90),
+      };
+    });
+  if (openings) {
+    unique(openings, 'Openings');
+    for (let i = 0; i < openings.length; i++)
+      for (let j = i + 1; j < openings.length; j++) {
+        const a = openings[i], b = openings[j];
+        if (a.wall === b.wall &&
+          Math.min(a.offset + a.width, b.offset + b.width) > Math.max(a.offset, b.offset) + 1e-6 &&
+          Math.min(a.sillHeight + a.height, b.sillHeight + b.height) > Math.max(a.sillHeight, b.sillHeight) + 1e-6)
+          throw new ValidationError('Openings overlap on the same wall.');
+      }
+  }
   return {
-    width, depth, height: number(room.height, 'Room height', 1.5, 12),
+    width, depth, height,
+    ...(room.dimensionSources === undefined ? {} : {
+      dimensionSources: Object.fromEntries(Object.entries(record(room.dimensionSources, 'Room dimension sources'))
+        .filter(([name]) => ['width', 'depth', 'height'].includes(name))
+        .map(([name, value]) => [name, choice(value, dimensionSources, 'Room dimension source')])),
+    }),
     wallColor: color(room.wallColor, 'Wall color'), floorColor: color(room.floorColor, 'Floor color'),
     door: { wall, width: doorWidth, offset },
+    ...(openings !== undefined ? { openings } : {}),
   };
 }
 
@@ -85,6 +126,8 @@ export function validateItem(input: unknown): FurnitureItem {
     id: text(item.id, 'Furniture ID', 128), type: choice(item.type, TYPES, 'Furniture type'), name: text(item.name, 'Furniture name'),
     width: number(item.width, 'Furniture width', 0.01, 20), depth: number(item.depth, 'Furniture depth', 0.01, 20),
     height: number(item.height, 'Furniture height', 0.005, 12), color: color(item.color, 'Furniture color'),
+    ...(item.mounting !== undefined ? { mounting: choice(item.mounting, ['floor', 'wall', 'ceiling'] as const, 'Furniture mounting') } : {}),
+    ...(item.elevationM !== undefined ? { elevationM: number(item.elevationM, 'Furniture elevation', 0, 12) } : {}),
     source: choice(item.source, ['estimated', 'measured', 'sample'] as const, 'Dimension source'),
     x: number(item.x, 'Furniture X position', -100, 100), z: number(item.z, 'Furniture Z position', -100, 100),
     rotation: normalizeRotation(number(item.rotation, 'Furniture rotation', -360000, 360000)),
@@ -118,12 +161,19 @@ export function validatePhoto(input: unknown): Photo {
   if (width * height > 40_000_000) throw new ValidationError('The photo exceeds 40 megapixels.');
   const detections = array(photo.detections, 'Detections', 100).map((item) => validateDetection(item, width, height));
   unique(detections, 'Detections');
+  const roomProposal = photo.roomProposal === undefined ? undefined : roomReconstructionProposalSchema.safeParse(photo.roomProposal);
+  if (roomProposal && !roomProposal.success) throw new ValidationError('The room reconstruction proposal has invalid geometry or dimensions.');
+  if (roomProposal?.success) {
+    const issues = roomReconstructionImageIssues(roomProposal.data, width, height);
+    if (issues.length) throw new ValidationError(issues[0]);
+  }
   return {
     id: text(photo.id, 'Photo ID', 128), name: text(photo.name, 'Photo name', 180),
     uri: imageUri(photo.uri), width, height, detections,
     analysisStatus: choice(photo.analysisStatus, ['idle', 'running', 'complete', 'failed'] as const, 'Analysis status'),
     ...(photo.analysisMessage !== undefined ? { analysisMessage: text(photo.analysisMessage, 'Analysis message', 1000) } : {}),
     ...(photo.processedUri !== undefined ? { processedUri: imageUri(photo.processedUri) } : {}),
+    ...(roomProposal?.success ? { roomProposal: roomProposal.data } : {}),
   };
 }
 

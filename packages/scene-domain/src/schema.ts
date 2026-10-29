@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FURNITURE_TYPES } from './legacy/types';
 
 export const id = z
   .string()
@@ -26,6 +27,98 @@ export const color = z.string().regex(/^#[a-f0-9]{6}$/i);
 export const point = z
   .tuple([finite, finite])
   .transform(([x, z]): [number, number] => [x, z]);
+export const reconstructionOpeningSchema = z.object({
+  id,
+  kind: z.literal('unclassified'),
+  boxPx: z.tuple([finite.nonnegative(), finite.nonnegative(), finite.positive(), finite.positive()]),
+  wallIndex: z.number().int().min(0).max(63),
+  offsetM: finite.nonnegative(),
+  widthM: finite.positive().max(10),
+  heightM: finite.positive().max(12),
+  sillHeightM: finite.nonnegative().max(12),
+  requiresReview: z.literal(true),
+});
+const reconstructionProposal = z.object({
+  status: z.enum(['estimated', 'insufficient-evidence']),
+  // Placeholder is retained when reading a saved proposal from older versions.
+  source: z.enum(['model-estimated', 'unavailable', 'placeholder']),
+  method: z.string().trim().min(1).max(300),
+  partial: z.boolean(),
+  confidence: z.enum(['low', 'medium']),
+  floorCornersPx: z.array(point).max(4).default([]),
+  floorPolygonXZ: z.array(point).min(3).max(64).optional(),
+  widthM: finite.positive().max(100).optional(),
+  depthM: finite.positive().max(100).optional(),
+  heightM: finite.positive().max(100).optional(),
+  imageToFloor: z.array(finite).length(9).optional(),
+  camera: z.object({
+    fx: finite.positive(), fy: finite.positive(), cx: finite, cy: finite,
+    source: z.enum(['provided', 'fov-assumption']),
+  }).optional(),
+  boundaryEdges: z.array(z.enum(['observed-wall', 'view-limit'])).min(3).max(64).optional(),
+  warnings: z.array(z.string().max(500)).max(20),
+  openings: z.array(reconstructionOpeningSchema).max(20).optional(),
+}).superRefine((proposal, ctx) => {
+  const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  if (proposal.status === 'estimated' &&
+    (proposal.source !== 'model-estimated' ||
+      (!proposal.floorPolygonXZ && !(proposal.widthM && proposal.depthM))))
+    issue('An estimated room needs model geometry and a model-estimated source');
+  const floor = proposal.floorPolygonXZ;
+  const edgeCount = floor?.length ?? (proposal.widthM && proposal.depthM ? 4 : undefined);
+  if (proposal.boundaryEdges && edgeCount && proposal.boundaryEdges.length !== edgeCount)
+    issue('Boundary labels must correspond to the floor polygon edges');
+  if (floor) {
+    const cross = (a: number[], b: number[], c: number[]) =>
+      (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    let area = 0;
+    if (new Set(floor.map((p) => p.join(','))).size !== floor.length)
+      issue('The estimated floor repeats a corner');
+    for (let i = 0; i < floor.length; i++) {
+      const a = floor[i], b = floor[(i + 1) % floor.length];
+      area += a[0] * b[1] - b[0] * a[1];
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6)
+        issue('The estimated floor has a zero-length edge');
+      for (let j = i + 1; j < floor.length; j++) {
+        if (j === i + 1 || (i === 0 && j === floor.length - 1)) continue;
+        const c = floor[j], d = floor[(j + 1) % floor.length];
+        if (cross(a, b, c) * cross(a, b, d) < -1e-12 &&
+          cross(c, d, a) * cross(c, d, b) < -1e-12)
+          issue('The estimated floor intersects itself');
+      }
+    }
+    if (Math.abs(area) < 1e-8) issue('The estimated floor has no usable area');
+    for (const opening of proposal.openings ?? []) {
+      const a = floor[opening.wallIndex], b = floor[(opening.wallIndex + 1) % floor.length];
+      if (!a || !b || opening.offsetM + opening.widthM > Math.hypot(b[0] - a[0], b[1] - a[1]) + 1e-6)
+        issue('An opening candidate extends beyond the estimated wall');
+    }
+  }
+  if (proposal.imageToFloor) {
+    const matrixScale = Math.max(...proposal.imageToFloor.map(Math.abs)),
+      [a, b, c, d, e, f, g, h, i] = proposal.imageToFloor.map((v) => v / matrixScale),
+      determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-14)
+      issue('The image-to-floor mapping is singular');
+  }
+  if (proposal.openings && new Set(proposal.openings.map((o) => o.id)).size !== proposal.openings.length)
+    issue('Opening candidate IDs must be unique');
+});
+/** Accept older saved corner-only suggestions without treating them as metric geometry. */
+export const roomReconstructionProposalSchema = z.preprocess((input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || 'status' in input)
+    return input;
+  const old = input as Record<string, unknown>;
+  if (!['model-estimated', 'placeholder'].includes(old.source as string)) return input;
+  return {
+    ...old,
+    status: 'insufficient-evidence',
+    method: 'legacy-corner-proposal',
+    partial: true,
+    confidence: 'low',
+    warnings: old.warnings ?? ['This saved suggestion has no supported metric reconstruction. Analyze the photograph again.'],
+  };
+}, reconstructionProposal);
 export const brushStrokeSchema = z.object({
   tool: z.enum(['paint', 'erase']),
   radius: finite.min(1).max(500),
@@ -42,16 +135,7 @@ export const observationSchema = z.object({
   id,
   captureImageId: id,
   originalLabel: z.string().min(1).max(100),
-  category: z.enum([
-    'sofa',
-    'chair',
-    'bed',
-    'table',
-    'cabinet',
-    'plant',
-    'rug',
-    'custom',
-  ]),
+  category: z.enum(FURNITURE_TYPES),
   score: finite.min(0).max(1).optional(),
   modelVersion: z.string().max(200).optional(),
   source: z.enum(['model', 'manual']),
@@ -99,13 +183,7 @@ export const captureSchema = z
         homography: z.array(finite).length(9),
       })
       .optional(),
-    roomProposal: z
-      .object({
-        floorCornersPx: z.array(point).max(4),
-        source: z.enum(['model-estimated', 'placeholder']),
-        warnings: z.array(z.string().max(500)).max(20),
-      })
-      .optional(),
+    roomProposal: roomReconstructionProposalSchema.optional(),
     processingAssets: z
       .array(
         z.object({
@@ -130,6 +208,11 @@ export const captureSchema = z
     jobId: id.optional(),
     error: z.string().max(500).optional(),
   })
+  .superRefine((capture, ctx) => {
+    if (capture.roomProposal)
+      for (const message of roomReconstructionImageIssues(capture.roomProposal, capture.width, capture.height))
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['roomProposal'], message });
+  })
   .refine(
     (c) => c.width * c.height <= 20_000_000,
     'Image exceeds 20 megapixels',
@@ -142,6 +225,8 @@ export const physicalItemSchema = z.object({
   width: dimensionSchema,
   depth: dimensionSchema,
   height: dimensionSchema,
+  mounting: z.enum(['floor', 'wall', 'ceiling']).optional(),
+  elevationM: finite.min(0).max(12).optional(),
   representation: z.enum(['procedural', 'custom-box', 'approved-model']),
   color,
   movable: z.boolean(),
@@ -164,6 +249,16 @@ export const openingSchema = z.object({
   sillHeightM: finite.nonnegative().max(12),
   source: z.enum(dimensionSources),
   doorSwing: z.enum(['inward-start', 'inward-end', 'outward']).optional(),
+  hingeSide: z.enum(['start', 'end']).optional(),
+  swingDirection: z.enum(['inward', 'outward']).optional(),
+  openAngleDeg: finite.min(0).max(170).optional(),
+}).superRefine((opening, ctx) => {
+  if (opening.kind === 'window' && (opening.openAngleDeg ?? 0) > 90)
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['openAngleDeg'],
+      message: 'Window opening angle must be between 0 and 90 degrees',
+    });
 });
 const layoutSchema = z.object({
   id,
@@ -314,6 +409,16 @@ export const projectDocumentSchema = z.object({
   scene: roomSceneSchema,
 });
 export type Dimension = z.infer<typeof dimensionSchema>;
+export type RoomReconstructionProposal = z.infer<typeof roomReconstructionProposalSchema>;
+/** Every image coordinate remains in the oriented original, independently of analysis resizing. */
+export function roomReconstructionImageIssues(proposal: RoomReconstructionProposal, width: number, height: number): string[] {
+  const issues: string[] = [];
+  if (proposal.floorCornersPx.some(([x, y]) => x < 0 || y < 0 || x > width || y > height))
+    issues.push('Room floor image coordinates extend outside the source photograph');
+  if (proposal.openings?.some(({ boxPx: [x, y, w, h] }) => x + w > width || y + h > height))
+    issues.push('Opening image coordinates extend outside the source photograph');
+  return issues;
+}
 export type Observation = z.infer<typeof observationSchema>;
 export type Capture = z.infer<typeof captureSchema>;
 export type PhysicalItem = z.infer<typeof physicalItemSchema>;

@@ -1,6 +1,7 @@
-import { getCorners, overlaps, pointInFootprint } from './legacy/geometry';
+import { getCorners, getItemElevation, overlaps, pointInFootprint } from './legacy/geometry';
 import { activeLayout, legacyItem } from './scene';
 import type { Placement, PointXZ, RoomScene } from './schema';
+import { getOpeningLeaf, getOpeningSettings } from './openings';
 export const EPS = 1e-6;
 export function polygonArea(points: PointXZ[]) {
   return (
@@ -73,7 +74,7 @@ export function openingClearance(
       ? 1
       : -1;
   return scene.openings
-    .filter((o) => o.kind === 'door' && o.doorSwing !== 'outward')
+    .filter((o) => o.kind === 'door' && getOpeningSettings(o).swingDirection === 'inward')
     .map((o) => {
       const a = floor[o.wallIndex],
         b = floor[(o.wallIndex + 1) % floor.length],
@@ -119,21 +120,37 @@ export function placementWarnings(
   const item = scene.items.find((i) => i.id === placement.physicalItemId);
   if (!item) return ['Furniture is missing'];
   const legacy = legacyItem(item, placement),
+    elevation = getItemElevation(legacy, scene.height.meters),
+    top = elevation + item.height.meters,
     corners = getCorners(legacy).map((p) => [p.x, p.z] as PointXZ),
     warnings: string[] = [];
   if (!footprintContained(corners, scene.floorPolygonXZ))
     warnings.push('Extends beyond the room boundary');
   if (item.height.meters > scene.height.meters + EPS)
     warnings.push('Taller than the ceiling');
+  else if (top > scene.height.meters + EPS)
+    warnings.push('Extends above the ceiling');
   if (
     item.category !== 'rug' &&
-    openingClearance(scene).some((d) => polygonsOverlap(corners, d.polygon))
+    openingClearance(scene).some((d) => {
+      const opening = scene.openings.find((o) => o.id === d.id)!;
+      return top > opening.sillHeightM + EPS &&
+        elevation < opening.sillHeightM + opening.heightM - EPS &&
+        polygonsOverlap(corners, d.polygon);
+    })
   )
     warnings.push('Blocks a doorway clearance');
+  if (item.category !== 'rug')
+    for (const opening of scene.openings) {
+      if ((opening.openAngleDeg ?? 0) <= 0 || top <= opening.sillHeightM + EPS ||
+        elevation >= opening.sillHeightM + opening.heightM - EPS) continue;
+      if (polygonsOverlap(corners, getOpeningLeaf(scene.floorPolygonXZ, opening).footprint))
+        warnings.push(`Blocks an open ${opening.kind}`);
+    }
   for (const other of activeLayout(scene).placements) {
     if (other.physicalItemId === item.id) continue;
     const oi = scene.items.find((i) => i.id === other.physicalItemId);
-    if (oi && overlaps(legacy, legacyItem(oi, other)))
+    if (oi && overlaps(legacy, legacyItem(oi, other), scene.height.meters))
       warnings.push(`Overlaps ${oi.name}`);
   }
   return warnings;
@@ -152,7 +169,8 @@ export function roomFeedback(scene: RoomScene) {
   );
   const occupied = placements.reduce((sum, p) => {
     const i = scene.items.find((i) => i.id === p.physicalItemId)!;
-    return sum + (i.category === 'rug' ? 0 : i.width.meters * i.depth.meters);
+    return sum + (i.category === 'rug' || getItemElevation(legacyItem(i), scene.height.meters) > EPS
+      ? 0 : i.width.meters * i.depth.meters);
   }, 0);
   return {
     area,
@@ -183,7 +201,10 @@ export function canStand(
     if (!pointInPolygon(p, boundary)) return false;
   return !activeLayout(scene).placements.some((p) => {
     const i = scene.items.find((i) => i.id === p.physicalItemId)!;
-    return pointInFootprint(x, z, legacyItem(i, p), margin);
+    const item = legacyItem(i, p);
+    // A bounded standing volume, rather than an infinitely tall floor footprint.
+    return getItemElevation(item, scene.height.meters) < 1.8 - EPS &&
+      pointInFootprint(x, z, item, margin);
   });
 }
 export function walkPathClear(
