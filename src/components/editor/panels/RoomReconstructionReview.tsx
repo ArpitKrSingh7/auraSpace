@@ -37,7 +37,7 @@ export function RoomReconstructionReview({ photo, projectId, disabled = false }:
       useAppStore.getState().updatePhotoInProject(projectId, photo.id, { roomProposal: result });
       if (alive.current) setMessage(result.status === 'estimated'
         ? 'Draft ready. Review its boundaries and scale before applying.'
-        : 'This view could not support a room draft. Try a view with more visible floor and wall corners.');
+        : 'This view could not support a room draft. Try a photo from a corner or doorway with more visible floor and wall edges.');
     } catch (e) {
       if (alive.current) setError(e instanceof Error ? e.message : 'Room reconstruction could not finish.');
     } finally { if (alive.current) setBusy(false); }

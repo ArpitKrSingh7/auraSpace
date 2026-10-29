@@ -1,5 +1,6 @@
 'use client';
 
+import { PrivacyNotice } from '@/components/privacy/PrivacyNotice';
 import { RoomPreview } from '@/components/projects/RoomPreview';
 import { Dialog } from '@/components/ui/Dialog';
 import type { Project } from '@/domain/types';
@@ -49,9 +50,10 @@ function NewRoomDialog({
     >
       <p className="mb-5 text-sm text-surface-500">
         {photo
-          ? 'Import a photo to estimate the visible floor and walls, then review the room scale and detected furniture. Hidden boundaries remain editable.'
+          ? 'For best results, take a photo from a corner or doorway with plenty of floor and two adjoining walls visible. Review the estimated room and furniture before applying them.'
           : 'Give your space a name and set its dimensions. You can refine everything in the editor.'}
       </p>
+      {photo && <PrivacyNotice className="mb-5" />}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -651,6 +653,7 @@ export default function HomePage() {
               />
             </label>
           ))}
+          <PrivacyNotice />
           <button
             className="btn-primary w-full"
             onClick={() => setShowSettings(false)}

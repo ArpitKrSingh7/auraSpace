@@ -39,7 +39,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             <div>
               <div className="text-sm font-semibold">Project File (.json)</div>
               <div className="text-xs text-surface-500">
-                Full project data, importable later
+                Importable room data, including any saved photos. Sharing this
+                file shares its contents.
               </div>
             </div>
           </div>

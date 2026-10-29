@@ -1,5 +1,6 @@
 'use client';
 
+import { PrivacyNotice } from '@/components/privacy/PrivacyNotice';
 import { Dialog } from '@/components/ui/Dialog';
 import type { Detection, FurnitureType } from '@/domain/types';
 import { useAppStore } from '@/store/useAppStore';
@@ -251,8 +252,38 @@ export function PhotoUploadDialog({
         scale and keep the pieces you want in your tray.
       </p>
 
+      <PrivacyNotice className="mb-5" />
+
       {!preview ? (
         <div className="space-y-4">
+          <section
+            aria-label="Room photo tips"
+            className="rounded-xl border border-brand-200 bg-brand-50/50 p-3"
+          >
+            <h3 className="text-xs font-semibold text-brand-800">
+              Get a better room draft
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-surface-600">
+              Take a landscape photo from a corner or doorway, looking
+              diagonally across the room. Include plenty of floor and two
+              adjoining walls, with their edges clearly visible.
+            </p>
+            <details className="mt-2 text-xs text-surface-600">
+              <summary className="cursor-pointer font-medium text-brand-700">
+                More photo tips
+              </summary>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
+                <li>Use the normal 1× camera; avoid panoramas and ultra-wide shots.</li>
+                <li>Keep the phone level from side to side and avoid steep up/down angles.</li>
+                <li>Use good lighting and hold steady so floor and wall edges stay clear.</li>
+                <li>Measure a visible floor length, such as across a few tiles, to calibrate scale.</li>
+              </ul>
+              <p className="mt-2 leading-relaxed">
+                Better visibility helps the estimate. Hidden walls and exact
+                dimensions still need your review.
+              </p>
+            </details>
+          </section>
           <button
             type="button"
             className="w-full border-2 border-dashed border-surface-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-all"
