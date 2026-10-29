@@ -9,11 +9,16 @@ describes a *partial visible extent*, not the dimensions of an unseen room.
 from __future__ import annotations
 
 import math
+import logging
 from typing import Any
 
 import cv2
 import numpy as np
 
+from app.line_detection import hough_segments
+
+
+logger = logging.getLogger(__name__)
 
 _FOV_DEGREES = 60.0
 _MAX_SAMPLES = 8000
@@ -80,22 +85,33 @@ def _line_candidates(image: np.ndarray, excluded: np.ndarray) -> list[list[int]]
     edges[cv2.dilate(small_mask, np.ones((5, 5), np.uint8)) > 0] = 0
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=max(16, round(min(working.shape[:2]) * .10)),
                             minLineLength=max(16, round(min(working.shape[:2]) * .14)), maxLineGap=8)
-    if lines is None:
-        return []
-    segments = sorted(lines[:, 0].tolist(), key=lambda p: (p[2] - p[0]) ** 2 + (p[3] - p[1]) ** 2, reverse=True)
+    segments = sorted(hough_segments(lines).tolist(), key=lambda p: (p[2] - p[0]) ** 2 + (p[3] - p[1]) ** 2, reverse=True)
     return [[int(round(value / scale)) for value in segment] for segment in segments[:60]]
+
+
+def unavailable_room_proposal(warning: str) -> dict[str, Any]:
+    """A no-geometry response that cannot re-enter failing image diagnostics."""
+    return {
+        "status": "insufficient-evidence", "source": "unavailable",
+        "method": "unavailable",
+        "partial": True, "confidence": "low", "floorCornersPx": [],
+        "warnings": [warning, "A single photograph does not establish hidden room boundaries. Enter or verify measured dimensions."],
+        "fitting": {"lineCandidatesPx": [], "lineCount": 0},
+    }
 
 
 def _unavailable(image: np.ndarray, excluded: np.ndarray, warning: str,
                  camera: dict[str, Any] | None = None) -> dict[str, Any]:
-    candidates = _line_candidates(image, excluded)
-    result: dict[str, Any] = {
-        "status": "insufficient-evidence", "source": "unavailable",
-        "method": "image-lines-only" if candidates else "unavailable",
-        "partial": True, "confidence": "low", "floorCornersPx": [],
-        "warnings": [warning, "A single photograph does not establish hidden room boundaries. Enter or verify measured dimensions."],
-        "fitting": {"lineCandidatesPx": candidates, "lineCount": len(candidates)},
-    }
+    result = unavailable_room_proposal(warning)
+    # Image lines are optional diagnostics, never a prerequisite for explaining
+    # insufficient floor evidence or a reason to invent room dimensions.
+    try:
+        candidates = _line_candidates(image, excluded)
+        result["method"] = "image-lines-only" if candidates else "unavailable"
+        result["fitting"] = {"lineCandidatesPx": candidates, "lineCount": len(candidates)}
+    except Exception as exc:
+        logger.warning("Room line diagnostics unavailable: %s", type(exc).__name__)
+        result["warnings"].append("Image-line diagnostics could not finish. Enter or verify measured dimensions.")
     if camera is not None:
         result["camera"] = camera
     return result

@@ -2,6 +2,7 @@
 import json
 import math
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -156,6 +157,42 @@ class RoomReconstructionTests(unittest.TestCase):
         self.assertGreater(len(result["fitting"]["lineCandidatesPx"]), 0)
         self.assertEqual(result["floorCornersPx"], [])
         self.assertNotIn("widthM", result)
+
+    def test_line_fallback_accepts_flat_and_nested_hough_outputs(self):
+        image = np.zeros((240, 320, 3), dtype=np.uint8)
+        segments = np.array([[20, 170, 280, 90], [30, 20, 30, 160]], dtype=np.int32)
+        for shape in [(2, 4), (2, 1, 4)]:
+            with self.subTest(shape=shape), patch("cv2.HoughLinesP", return_value=segments.reshape(shape)):
+                result = reconstruct_room(image)
+                self.assertEqual(result["status"], "insufficient-evidence")
+                self.assertEqual(result["method"], "image-lines-only")
+                self.assertEqual(result["fitting"]["lineCandidatesPx"], segments.tolist())
+                self.assertEqual(result["floorCornersPx"], [])
+                self.assertNotIn("widthM", result)
+                json.dumps(result, allow_nan=False)
+
+    def test_failed_floor_fit_returns_line_evidence_with_either_hough_shape(self):
+        image, depth, camera, _ = pinhole_room()
+        segments = np.array([[20, 170, 280, 90], [30, 20, 30, 160]], dtype=np.int32)
+        for shape in [(2, 4), (2, 1, 4)]:
+            with self.subTest(shape=shape), \
+                    patch("app.room_reconstruction._fit_floor", return_value=None), \
+                    patch("cv2.HoughLinesP", return_value=segments.reshape(shape)):
+                result = reconstruct_room(image, depth, "meters", intrinsics=camera)
+                self.assertEqual(result["status"], "insufficient-evidence")
+                self.assertEqual(result["fitting"]["lineCount"], 2)
+                self.assertTrue(any("No sufficiently supported" in w for w in result["warnings"]))
+                self.assertNotIn("widthM", result)
+
+    def test_optional_line_diagnostic_failure_still_returns_no_evidence(self):
+        image = np.zeros((240, 320, 3), dtype=np.uint8)
+        with patch("cv2.HoughLinesP", side_effect=cv2.error("test line detector failure")):
+            result = reconstruct_room(image)
+        self.assertEqual(result["status"], "insufficient-evidence")
+        self.assertEqual(result["method"], "unavailable")
+        self.assertEqual(result["fitting"]["lineCandidatesPx"], [])
+        self.assertNotIn("imageToFloor", result)
+        self.assertTrue(any("line diagnostics" in w for w in result["warnings"]))
 
     def test_rejects_heuristic_wrong_units_flat_empty_and_misaligned_depth(self):
         image, depth, camera, _ = pinhole_room()

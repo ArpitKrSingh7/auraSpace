@@ -34,6 +34,8 @@ from typing import Any
 import cv2
 import numpy as np
 
+from app.line_detection import hough_segments
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,16 +90,15 @@ def estimate_room_boundaries(
     vertical: list[list[int]] = []
     all_lines: list[list[int]] = []
 
-    if lines_raw is not None:
-        for line in lines_raw:
-            x1, y1, x2, y2 = [int(value) for value in line[0]]
-            all_lines.append([x1, y1, x2, y2])
+    for line in hough_segments(lines_raw):
+        x1, y1, x2, y2 = [int(value) for value in line]
+        all_lines.append([x1, y1, x2, y2])
 
-            angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)))
-            if angle < 15 or angle > 165:
-                horizontal.append([x1, y1, x2, y2])
-            elif 75 < angle < 105:
-                vertical.append([x1, y1, x2, y2])
+        angle = abs(math.degrees(math.atan2(y2 - y1, x2 - x1)))
+        if angle < 15 or angle > 165:
+            horizontal.append([x1, y1, x2, y2])
+        elif 75 < angle < 105:
+            vertical.append([x1, y1, x2, y2])
 
     # Build a simplified boundary polygon from extreme line endpoints
     boundary_polygon = _compute_boundary_polygon(horizontal, vertical, w, h)
@@ -193,15 +194,14 @@ def detect_vanishing_points(
         minLineLength=40, maxLineGap=10,
     )
 
-    if lines is None or len(lines) < 2:
+    segments = hough_segments(lines)
+    if len(segments) < 2:
         logger.info("Not enough lines for vanishing-point detection")
         return []
 
     h, w = image.shape[:2]
     # Compute pairwise intersections
     intersections: list[tuple[float, float]] = []
-    segments = [l[0] for l in lines]
-
     for i in range(len(segments)):
         for j in range(i + 1, min(i + 50, len(segments))):  # limit pairs
             pt = _line_intersection(segments[i], segments[j])

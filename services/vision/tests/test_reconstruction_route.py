@@ -6,12 +6,13 @@ Existing test_routes.py covers the HTTP layer in environments that permit it.
 import unittest
 from unittest.mock import patch
 
+import numpy as np
 from pydantic import ValidationError
 
 from app.depth import DepthEstimate
 from app.preprocessing import encode_image
 from app.routes import analyze_room
-from app.schemas import AnalyzeRequest
+from app.schemas import AnalyzeRequest, BoundingBox, Detection
 from test_room_reconstruction import pinhole_room
 
 
@@ -71,6 +72,42 @@ class ReconstructionRouteTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             AnalyzeRequest(image=encode_image(self.image, fmt="png"), include_room=True,
                            intrinsics={**self.camera, "fx": 0})
+
+    def test_unsupported_floor_preserves_detections_for_either_hough_layout(self):
+        segments = np.array([[20, 20, 300, 20], [20, 20, 20, 220], [20, 20, 300, 220]], dtype=np.int32)
+        detection = Detection(label="chair", class_id=62, score=.9,
+                              box=BoundingBox(x1=100, y1=80, x2=160, y2=150))
+        for shape in [(3, 4), (3, 1, 4)]:
+            with self.subTest(shape=shape), \
+                    patch("app.routes.detect_furniture", return_value=[detection]), \
+                    patch("app.routes.estimate_depth_result", return_value=DepthEstimate(self.depth, "meters", "mock-depth-test", [])), \
+                    patch("app.room_reconstruction._fit_floor", return_value=None), \
+                    patch("cv2.HoughLinesP", return_value=segments.reshape(shape)):
+                response = analyze_room(AnalyzeRequest(image=encode_image(self.image, fmt="png"), include_room=True))
+                body = response.model_dump(mode="json")
+                self.assertEqual(body["detections"][0]["label"], "chair")
+                self.assertEqual(body["room_proposal"]["status"], "insufficient-evidence")
+                self.assertEqual(body["room_proposal"]["fitting"]["lineCount"], 3)
+                self.assertEqual(body["room_estimate"]["total_lines"], 3)
+                self.assertGreater(len(body["room_estimate"]["vanishing_points"]), 0)
+                self.assertNotIn("boundary_polygon", body["room_estimate"])
+                self.assertNotIn("widthM", body["room_proposal"])
+
+    def test_geometry_exception_does_not_repeat_the_failing_reconstructor(self):
+        with patch("app.routes.reconstruct_room", side_effect=RuntimeError("test geometry failure")) as reconstruct:
+            body, _ = self.request()
+        reconstruct.assert_called_once()
+        self.assertEqual(body["room_proposal"]["status"], "insufficient-evidence")
+        self.assertEqual(body["room_proposal"]["floorCornersPx"], [])
+        self.assertTrue(any("Room fitting could not finish" in w for w in body["warnings"]))
+        self.assertNotIn("widthM", body["room_proposal"])
+
+    def test_diagnostic_error_does_not_discard_a_valid_room_draft(self):
+        with patch("app.routes.estimate_room_boundaries", side_effect=RuntimeError("test diagnostic failure")):
+            body, _ = self.request()
+        self.assertEqual(body["room_proposal"]["status"], "estimated")
+        self.assertAlmostEqual(body["room_proposal"]["widthM"], 5.2, delta=.12)
+        self.assertIsNone(body["room_estimate"])
 
 
 if __name__ == "__main__":

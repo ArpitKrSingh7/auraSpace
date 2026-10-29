@@ -39,7 +39,7 @@ from app.preprocessing import (
     to_grayscale,
 )
 from app.room_analysis import detect_vanishing_points, estimate_room_boundaries
-from app.room_reconstruction import reconstruct_room
+from app.room_reconstruction import reconstruct_room, unavailable_room_proposal
 from app.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -114,6 +114,13 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
                 image, depth=depth_map, depth_units=depth_result.units if depth_result else None,
                 boxes=furniture_boxes, intrinsics=req.intrinsics,
             )
+        except Exception:
+            logger.exception("Room fitting failed; returning an unavailable proposal")
+            room_proposal = unavailable_room_proposal(
+                "Room fitting could not finish. Review the original photo and use measured dimensions."
+            )
+
+        try:
             # Keep classical diagnostics for existing clients, but not the old
             # image-border fallback polygon or any relative-depth dimensions.
             room_estimate = estimate_room_boundaries(image)
@@ -124,10 +131,8 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
             if depth_map is not None:
                 room_estimate["depth_units"] = depth_result.units if depth_result else "unknown"
         except Exception as exc:
-            logger.warning(f"Room geometry estimation skipped due to error: {exc}")
-            if room_proposal is None:
-                room_proposal = reconstruct_room(image)
-                room_proposal["warnings"].append("Room fitting could not finish. Review the original photo and use measured dimensions.")
+            logger.warning(f"Classical room diagnostics skipped due to error: {exc}")
+            room_estimate = None
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
