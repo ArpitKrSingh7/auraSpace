@@ -4,6 +4,8 @@ Android room planning with a shared scene engine, a private processing backend, 
 
 Start with [RUNNING.md](RUNNING.md) for the complete run guide, required environment variables, local Redis/database settings, and Supabase Storage setup. The only environment file is the root `.env`; the clean-checkout template is in that guide. Supabase Storage is the default.
 
+For Vercel and the hosted backend, see [DEPLOYMENT.md](DEPLOYMENT.md), including the Python dependency-index fix, model-weight setup, and which services the current deployment includes.
+
 **Status:** installable Android preview with newer source changes awaiting the postponed APK rebuild. Photo-to-room source now fits a correctable partial floor/wall shell from raw metric depth, with known-length scale calibration and explicit review. Physical-phone behavior and independent real-room accuracy remain acceptance gates. See [reconstruction method and limits](docs/reconstruction-method.md), [the plan audit](docs/implementation-audit.md), and [Android setup](docs/android-setup.md).
 
 ## Quick start
