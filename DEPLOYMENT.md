@@ -22,6 +22,12 @@ The Next.js build succeeded in both supplied logs.
 The current `vercel.json` defines a Next.js `app` service and a private FastAPI
 `vision` service. Keep the repository root (`.`) as Root Directory.
 
+Site titles, canonical links, the sitemap and sharing previews use Vercel's
+production hostname automatically. When connecting a custom domain, set the
+optional public `NEXT_PUBLIC_SITE_URL=https://your-domain.tld` on Vercel and
+redeploy so those URLs use your preferred domain. The favicon, Apple touch
+icon, home-screen manifest and sharing image are included as static assets.
+
 1. In **Project Settings → Environment Variables**, set
    `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` for Production and Preview.
 2. Ensure **Fluid Compute with Active CPU** is enabled. Redeploy the new commit
