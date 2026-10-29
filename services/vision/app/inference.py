@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import time
 import os
-import hashlib
+from app.model_assets import file_sha256
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -85,7 +85,7 @@ def _load_model() -> torch.nn.Module:
     checkpoint = os.getenv('MASKRCNN_MODEL_PATH')
     if checkpoint:
         path = Path(checkpoint)
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = file_sha256(path)
         if digest != os.getenv('MASKRCNN_MODEL_SHA256'):
             raise ValueError('Detection checkpoint checksum does not match the pinned manifest')
         model = maskrcnn_resnet50_fpn_v2(weights=None, weights_backbone=None)

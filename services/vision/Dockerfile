@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements-depth.txt
 
 COPY app/ ./app/
 COPY model-manifest.json ./model-manifest.json
+COPY scripts/ ./scripts/
 
 EXPOSE 8000
 

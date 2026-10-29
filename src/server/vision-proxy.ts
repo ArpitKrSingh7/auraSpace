@@ -88,9 +88,12 @@ export async function proxyVision(
     const url = new URL(operation, base.endsWith('/') ? base : `${base}/`);
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.VISION_API_TOKEN ? { 'X-AuraSpace-Vision-Token': process.env.VISION_API_TOKEN } : {}),
+      },
       body: JSON.stringify(parsed.data),
-      signal: AbortSignal.timeout(50_000),
+      signal: AbortSignal.timeout(180_000),
       cache: 'no-store',
     });
     const data = await response.json();

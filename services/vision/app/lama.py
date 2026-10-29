@@ -2,7 +2,7 @@
 
 Only operator-configured local checkpoints are loaded, never user-supplied paths.
 """
-import hashlib
+from app.model_assets import file_sha256
 import os
 import threading
 from pathlib import Path
@@ -25,7 +25,7 @@ def _load():
     if _model is not None:
         return _model
     path=Path(os.environ['LAMA_MODEL_PATH'])
-    checksum=hashlib.sha256(path.read_bytes()).hexdigest()
+    checksum=file_sha256(path)
     if checksum!=os.environ['LAMA_MODEL_SHA256']:
         raise ValueError('LaMa checkpoint checksum does not match the pinned manifest')
     _model=torch.jit.load(str(path),map_location='cpu').eval()

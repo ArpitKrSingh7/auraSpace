@@ -1,8 +1,8 @@
 import type { NextRequest } from 'next/server';
 import { proxyVision } from '@/server/vision-proxy';
 
-// Allow the 50-second upstream timeout to complete on hosts honoring this budget.
-export const maxDuration = 60;
+// Cold CPU inference gets a bounded three-minute upstream budget.
+export const maxDuration = 300;
 
 export function POST(req: NextRequest) {
   return proxyVision(req, 'analyze');

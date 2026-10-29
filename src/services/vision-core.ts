@@ -257,7 +257,7 @@ export async function postVision(
       'image-too-large',
     );
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 55_000);
+  const timeout = setTimeout(() => controller.abort(), 185_000);
   try {
     const response = await fetch(
       `${endpoint.replace(/\/$/, '')}/${operation}`,

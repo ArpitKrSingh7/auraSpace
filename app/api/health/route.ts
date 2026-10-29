@@ -19,6 +19,7 @@ export async function GET() {
   ) {
     try {
       const res = await fetch(getVisionUrl('health'), {
+        headers: process.env.VISION_API_TOKEN ? { 'X-AuraSpace-Vision-Token': process.env.VISION_API_TOKEN } : {},
         signal: AbortSignal.timeout(2000),
         cache: 'no-store',
       });

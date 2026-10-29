@@ -4,6 +4,8 @@ node_modules
 **/.env*
 .deprecated
 services/vision/.venv
+services/vision/.vercel
+services/vision/models
 **/__pycache__
 *.tsbuildinfo
 .artifacts

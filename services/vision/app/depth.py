@@ -5,12 +5,13 @@ measurements are inferred from a colour map or uncalibrated camera intrinsics.
 """
 from __future__ import annotations
 from dataclasses import dataclass
-import hashlib,json,logging,os,threading
+import json,logging,os,threading
 from pathlib import Path
 import cv2
 import numpy as np
 import torch
 from app.config import DEVICE
+from app.model_assets import file_sha256
 logger=logging.getLogger(__name__)
 _lock=threading.Lock()
 _model=None
@@ -37,7 +38,7 @@ def _load_depth_model():
     directory=Path(os.environ['METRIC_DEPTH_MODEL_PATH'])
     manifest=json.loads((Path(__file__).resolve().parents[1]/'model-manifest.json').read_text())['metricDepth']
     for entry in manifest['files']:
-        if hashlib.sha256((directory/entry['name']).read_bytes()).hexdigest()!=entry['sha256']:raise ValueError('Depth checkpoint failed its checksum check')
+        if file_sha256(directory/entry['name'])!=entry['sha256']:raise ValueError('Depth checkpoint failed its checksum check')
     os.environ.setdefault('USE_TF','0')
     os.environ.setdefault('USE_FLAX','0')
     from transformers import AutoImageProcessor,AutoModelForDepthEstimation

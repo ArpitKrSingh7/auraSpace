@@ -1,0 +1,144 @@
+# Full backend for a Docker host. Web remains on Vercel.
+# Run from repo root with --env-file .env; this is separate from local Compose.
+name: auraspace-production
+
+x-backend: &backend
+  build:
+    context: ..
+    dockerfile: infra/backend.Dockerfile
+  image: auraspace-backend:production
+  env_file: ../.env
+  environment: &backend-env
+    DATABASE_URL: postgresql://auraspace:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/auraspace
+    REDIS_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379
+    SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL in .env}
+    SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Set the server-only storage key in .env}
+    SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-AuraSpace}
+    VISION_SERVICE_URL: http://vision:8000
+    VISION_TIMEOUT_MS: ${VISION_TIMEOUT_MS:-180000}
+    HOST: 0.0.0.0
+    PORT: 4000
+    CORS_ORIGINS: ${WEB_ORIGIN:?Set WEB_ORIGIN to your Vercel HTTPS origin}
+    ALLOW_GUEST_SESSIONS: ${ALLOW_GUEST_SESSIONS:-true}
+    WORKER_CONCURRENCY: 1
+    NODE_ENV: production
+  init: true
+  restart: unless-stopped
+  logging: &bounded-logs
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auraspace
+      POSTGRES_USER: auraspace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: ["database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auraspace -d auraspace"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    logging: *bounded-logs
+
+  redis:
+    image: redis:7.4-alpine
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "${REDIS_MAX_MEMORY:-256mb}", "--maxmemory-policy", "noeviction"]
+    volumes: ["queue:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    logging: *bounded-logs
+
+  model-assets:
+    build: ../services/vision
+    image: auraspace-vision:production
+    command: ["python", "scripts/download_models.py", "--include-depth", "--output", "/models"]
+    volumes: ["models:/models"]
+    restart: "no"
+    logging: *bounded-logs
+
+  vision:
+    image: auraspace-vision:production
+    build: ../services/vision
+    command: ["python", "scripts/start_production.py"]
+    environment:
+      MODEL_DIRECTORY: /models
+      PRELOAD_VISION_MODELS: "true"
+      TORCH_DEVICE: cpu
+      OMP_NUM_THREADS: ${VISION_CPU_THREADS:-2}
+      MKL_NUM_THREADS: ${VISION_CPU_THREADS:-2}
+    volumes: ["models:/models:ro"]
+    depends_on:
+      model-assets: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+    mem_limit: ${VISION_MEMORY_LIMIT:-4g}
+    init: true
+    restart: unless-stopped
+    logging: *bounded-logs
+
+  migrate:
+    <<: *backend
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"]
+    depends_on:
+      database: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    <<: *backend
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>r.json()).then(b=>process.exit(b.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  worker:
+    <<: *backend
+    command: ["node", "--import", "tsx", "apps/worker/src/index.ts"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      vision: { condition: service_healthy }
+    stop_grace_period: 90s
+
+  gateway:
+    image: caddy:2-alpine
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN to the backend DNS hostname}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL for TLS certificate registration}
+      VISION_API_TOKEN: ${VISION_API_TOKEN:?Set the shared Vercel-to-vision token}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+      - caddy-config:/config
+    depends_on:
+      api: { condition: service_healthy }
+      vision: { condition: service_healthy }
+    restart: unless-stopped
+    logging: *bounded-logs
+
+volumes:
+  database:
+  queue:
+  models:
+  certificates:
+  caddy-config:

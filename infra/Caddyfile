@@ -1,0 +1,25 @@
+{
+  email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+  request_body {
+    max_size 24MB
+  }
+
+  # Vercel calls this server-side with a shared token. The browser never gets
+  # that token. Native jobs reach vision over the private Compose network.
+  handle_path /vision/* {
+    @trusted header X-AuraSpace-Vision-Token {$VISION_API_TOKEN}
+    handle @trusted {
+      reverse_proxy vision:8000
+    }
+    handle {
+      respond "Vision access requires the application gateway." 401
+    }
+  }
+
+  handle {
+    reverse_proxy api:4000
+  }
+}

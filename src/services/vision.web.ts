@@ -183,7 +183,9 @@ export async function analyzeRoomPhoto(
   onProgress?.('Estimating depth, then fitting the visible floor and walls…');
   const result = await postVision('/api/vision', 'analyze', {
     image: canvas.toDataURL('image/jpeg', 0.84),
-    include_depth: true,
+    // include_room fits raw depth independently. Display/raw PNGs are not
+    // consumed here and can exceed the hosted proxy's response-size budget.
+    include_depth: false,
     include_room: true,
   });
   try {

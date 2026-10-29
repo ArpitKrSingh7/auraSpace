@@ -35,6 +35,8 @@ Thumbs.db
 # Local build tooling, media and generated Android output
 .artifacts/
 artifacts/
+services/vision/models/
+services/vision/.vercel/
 apps/mobile/.expo/
 apps/mobile/android/.gradle/
 apps/mobile/android/.cxx/

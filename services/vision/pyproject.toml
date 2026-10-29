@@ -21,6 +21,9 @@ dependencies = [
 [tool.vercel]
 entrypoint = "main:app"
 
+[tool.vercel.scripts]
+build = "python scripts/download_models.py --include-depth --output models"
+
 # Only Torch packages use this index. requests and the other dependencies stay
 # on PyPI instead of being shadowed by stale packages on the PyTorch mirror.
 [tool.uv.sources]
