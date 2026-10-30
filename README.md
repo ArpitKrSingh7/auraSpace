@@ -27,8 +27,8 @@ inside the room.
   chairs, desks, wardrobes/almirahs, dressing tables, mirrors, split ACs,
   ceiling fans and storage. Use custom boxes for unusual objects.
 - **Photo-assisted planning:** detect supported furniture, review an estimated
-  floor/wall draft, calibrate scale with a known measurement, and edit the
-  result before applying it.
+  floor/wall draft and open a populated starting layout. Check the numbered
+  detections, mark missed items, and enter room width/length in feet or metres.
 - **Image tools:** inspect grayscale, contrast, edges and contours, and create
   approximate furniture-removal previews.
 - **Save and compare:** keep alternative layouts in the browser, export an
@@ -44,10 +44,11 @@ detection and approximate removal fallbacks are also available.
    or an original photograph. For photo estimates, shoot from a corner or
    doorway with plenty of floor and two adjoining walls visible.
 2. **Review the estimate.** For photo-based planning, check detected furniture
-   and the visible floor/wall draft. Add a known floor measurement to calibrate
-   scale, or enter measured room dimensions.
-3. **Make it yours.** Apply the reviewed draft, adjust doors and windows, and
-   add furniture from detections or the library.
+   and the visible floor/wall draft. Uncheck wrong boxes, mark missed items,
+   and enter room width and length if known.
+3. **Make it yours.** Open the furnished draft, then adjust furniture sizes,
+   positions, doors and windows. Supported depth supplies initial object poses;
+   otherwise, positions are an explicitly labelled photo-composition guess.
 4. **Try different layouts.** Move and rotate items, examine opening clearances,
    compare saved alternatives and export the result.
 

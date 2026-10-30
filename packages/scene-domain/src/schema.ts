@@ -58,6 +58,13 @@ const reconstructionProposal = z.object({
   boundaryEdges: z.array(z.enum(['observed-wall', 'view-limit'])).min(3).max(64).optional(),
   warnings: z.array(z.string().max(500)).max(20),
   openings: z.array(reconstructionOpeningSchema).max(20).optional(),
+  furniture: z.array(z.object({
+    detectionIndex: z.number().int().min(0).max(99),
+    centerXZ: point,
+    widthM: finite.positive().max(20), depthM: finite.positive().max(20),
+    heightM: finite.positive().max(12), rotationDeg: finite.min(0).max(360),
+    method: z.literal('depth-projected'),
+  })).max(100).optional(),
 }).superRefine((proposal, ctx) => {
   const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   if (proposal.status === 'estimated' &&

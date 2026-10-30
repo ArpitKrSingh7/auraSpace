@@ -92,20 +92,21 @@ export function PhotoUploadDialog({
       setPhotoId(id);
       addPhoto(photo);
       const vision = await import('@/services/vision.web');
-      const results = await vision.analyzePhoto(photo, (msg) => {
+      const result = await vision.analyzeRoomScene(photo, (msg) => {
         if (mountedRef.current) setAnalysisMessage(msg);
       });
       // A result belongs to the project that requested it, even after navigation.
       useAppStore.getState().updatePhotoInProject(originalProjectId!, id, {
-        detections: results,
+        detections: result.detections,
+        roomProposal: result.roomProposal,
         analysisStatus: 'complete',
       });
       if (mountedRef.current) {
-        setDetections(results);
+        setDetections(result.detections);
         setAnalysisMessage(
-          results.length
-            ? 'Review the furniture below. Dimensions use editable category defaults.'
-            : 'No furniture detected. You can still add furniture from the library.',
+          result.detections.length
+            ? 'Your photo is ready. Check the furniture, then open your furnished room.'
+            : 'No furniture found. Mark the items in your photo to build a starting layout.',
         );
       }
     } catch (error) {
@@ -244,15 +245,15 @@ export function PhotoUploadDialog({
     <Dialog
       open
       onClose={onClose}
-      title="Bring your room in"
+      title={preview ? 'Review your room' : 'Bring your room in'}
       maxWidth="max-w-lg"
     >
-      <p className="mb-5 text-sm leading-relaxed text-surface-500">
-        Choose a photo to build a room draft and find furniture. Review the room
-        scale and keep the pieces you want in your tray.
-      </p>
+      {!preview && <p className="mb-5 text-sm leading-relaxed text-surface-500">
+        Upload a room photo. We’ll find furniture and put it into an editable
+        starting layout for you.
+      </p>}
 
-      <PrivacyNotice className="mb-5" />
+      {!preview && <PrivacyNotice className="mb-5" />}
 
       {!preview ? (
         <div className="space-y-4">
@@ -328,7 +329,7 @@ export function PhotoUploadDialog({
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="relative rounded-xl overflow-hidden">
+          {(analyzing || isSample) && <div className="relative rounded-xl overflow-hidden">
             <img src={preview} alt="Room" className="w-full rounded-xl" />
             {analyzing && (
               <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
@@ -340,7 +341,7 @@ export function PhotoUploadDialog({
                 </div>
               </div>
             )}
-          </div>
+          </div>}
 
           <p
             role="status"
@@ -350,10 +351,10 @@ export function PhotoUploadDialog({
               ? 'Illustrated sample · Predefined observations'
               : analysisMessage}
           </p>
-          {currentPhoto && project && !isSample && (
-            <RoomReconstructionReview key={currentPhoto.id} photo={currentPhoto} projectId={project.id} disabled={analyzing} />
+          {currentPhoto && project && !isSample && !analyzing && (
+            <RoomReconstructionReview key={currentPhoto.id} photo={currentPhoto} projectId={project.id} disabled={analyzing} onDone={onClose} />
           )}
-          {detections.length > 0 && (
+          {isSample && detections.length > 0 && (
             <div>
               <h3 className="text-sm font-semibold mb-2">Detected Furniture</h3>
               <div className="space-y-2">
@@ -412,7 +413,7 @@ export function PhotoUploadDialog({
               }}
             >
               <Check className="w-3.5 h-3.5" />
-              Back to my room
+              {isSample ? 'Back to my room' : 'Cancel'}
             </button>
             <button
               className="flex-1 btn-secondary text-xs py-2.5"
@@ -423,7 +424,7 @@ export function PhotoUploadDialog({
                 setAnalysisMessage('');
               }}
             >
-              Upload Another
+              Choose another photo
             </button>
           </div>
         </div>

@@ -34,7 +34,7 @@ logger.info("Torch device selected: %s", DEVICE)
 # ---------------------------------------------------------------------------
 # Mask R-CNN score threshold: detections below this are discarded.
 DETECTION_SCORE_THRESHOLD: float = float(
-    os.getenv("DETECTION_SCORE_THRESHOLD", "0.5")
+    os.getenv("DETECTION_SCORE_THRESHOLD", "0.2")
 )
 
 # Non-Maximum-Suppression IoU threshold

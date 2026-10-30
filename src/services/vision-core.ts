@@ -88,6 +88,7 @@ export function parseDetections(
         score,
         box,
         source: 'model' as const,
+        ...(typeof d.color === 'string' && /^#[a-f0-9]{6}$/i.test(d.color) ? { color: d.color } : {}),
       },
     ];
   });

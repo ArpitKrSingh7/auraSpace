@@ -151,6 +151,7 @@ export function validateDetection(input: unknown, imageWidth = 16384, imageHeigh
     id: text(detection.id, 'Detection ID', 128), label: text(detection.label, 'Detection label'),
     type: choice(detection.type, TYPES, 'Detected furniture type'), score: number(detection.score, 'Detection score', 0, 1),
     box: [x, y, width, height], source: choice(detection.source, ['model', 'manual'] as const, 'Detection source'),
+    ...(detection.color === undefined ? {} : { color: color(detection.color, 'Detected furniture color') }),
   };
 }
 

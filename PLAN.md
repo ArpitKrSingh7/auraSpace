@@ -12,9 +12,10 @@ and detected furniture, then arrange editable assets before moving real items.
 
 1. Create/open a browser-local room or explore a sample.
 2. Enter room dimensions, or upload an original room photograph.
-3. Review detected items and a partial floor/wall draft; calibrate scale using
-   a known floor length or override axes with measured dimensions.
-4. Explicitly apply the reviewed room; keep furniture dimensions and poses.
+3. Review numbered furniture boxes and a partial floor/wall draft. Correct
+   missed/wrong detections and enter room width/length in feet or metres.
+4. Open a populated draft with reviewed detections automatically placed.
+   Preserve unrelated furniture and support undo for the complete operation.
 5. Add detected/library furniture, or a dimensioned custom box/board.
 6. Place, rotate, resize and lock items in inside, overview or floor-plan views.
 7. Open/close doors and windows to examine placement/clearance, save alternatives
@@ -127,3 +128,18 @@ physical-room or inference-performance validation.
 Start and hosting instructions are in `RUNNING.md` and `DEPLOYMENT.md`. Do not
 start the full optional stack for ordinary website work. Keep legacy reference
 material out of active builds and preserve mobile source in its archive.
+
+## Photo-to-layout implementation update
+
+The website now performs detection and depth in one request, projects detected
+furniture surfaces vertically onto the fitted floor, includes their footprint
+in the draft extent, and creates an initial arrangement. A constrained search
+keeps suggested furniture within the room and avoids overlaps where space
+permits. Cropped objects and implausible dimensions use disclosed category
+priors. A photo-composition arrangement is explicitly a fallback guess when
+reliable floor depth is unavailable. The simple review screen supports numbered
+boxes, missing-item annotation, optional room width/length, estimated item sizes
+and one Build my room action that opens the pre-arranged draft.
+Measured dimensions and unrelated/locked furniture are preserved. Model recall
+uses reviewable lower-confidence candidates and mask-based duplicate rejection.
+Multi-photo pose alignment/fusion and automatic openings remain separate work.

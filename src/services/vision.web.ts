@@ -101,10 +101,11 @@ async function getDetector(progress?: Progress): Promise<Detector> {
 export async function analyzePhoto(
   photo: Photo,
   onProgress?: Progress,
+  browserOnly = false,
 ): Promise<Detection[]> {
   const canvas = await canvasFor(photo, 1280);
-  let serviceEndpoint = endpoint;
-  if (!serviceEndpoint) {
+  let serviceEndpoint = browserOnly ? undefined : endpoint;
+  if (!serviceEndpoint && !browserOnly) {
     try {
       const res = await fetch('/api/health', {
         signal: AbortSignal.timeout(12_000),
@@ -179,17 +180,34 @@ export async function analyzeRoomPhoto(
   photo: Photo,
   onProgress?: Progress,
 ): Promise<RoomReconstructionProposal> {
+  return (await analyzeRoomScene(photo, onProgress)).roomProposal;
+}
+
+/** Keep furniture indices and poses from the same inference request. */
+export async function analyzeRoomScene(photo: Photo, onProgress?: Progress): Promise<{ detections: Detection[]; roomProposal: RoomReconstructionProposal }> {
   const canvas = await canvasFor(photo, 1280);
-  onProgress?.('Estimating depth, then fitting the visible floor and walls…');
-  const result = await postVision('/api/vision', 'analyze', {
+  onProgress?.('Finding furniture and building your room layout…');
+  let result: Record<string, unknown>;
+  try { result = await postVision('/api/vision', 'analyze', {
     image: canvas.toDataURL('image/jpeg', 0.84),
     // include_room fits raw depth independently. Display/raw PNGs are not
     // consumed here and can exceed the hosted proxy's response-size budget.
     include_depth: false,
     include_room: true,
-  });
+  }); } catch (error) {
+    if (!(error instanceof VisionError) || !['service-unavailable', 'network'].includes(error.code)) throw error;
+    onProgress?.('Room depth is unavailable. Finding furniture on your device…');
+    const detections = await analyzePhoto(photo, onProgress, true);
+    return { detections, roomProposal: { status: 'insufficient-evidence', source: 'unavailable',
+      method: 'browser-detection-photo-layout', partial: true, confidence: 'low', floorCornersPx: [],
+      warnings: ['Server depth was unavailable. This starting layout uses photo composition and editable furniture defaults. Enter room width and length for better scale.'] } };
+  }
   try {
-    return mapRoomProposalToSource(result.room_proposal, canvas, photo);
+    const detections = parseDetections(result.detections, canvas.width, canvas.height).map((d) => ({
+      ...d, box: [d.box[0] * photo.width / canvas.width, d.box[1] * photo.height / canvas.height,
+        d.box[2] * photo.width / canvas.width, d.box[3] * photo.height / canvas.height] as Detection['box'],
+    }));
+    return { detections, roomProposal: mapRoomProposalToSource(result.room_proposal, canvas, photo) };
   } catch {
     throw new VisionError('The service did not return a usable room proposal. Check its version or try another view.');
   }

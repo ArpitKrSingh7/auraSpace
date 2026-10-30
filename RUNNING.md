@@ -46,12 +46,19 @@ There is no need to start the API, worker, database, Redis, Expo or an emulator
 for this flow. Reuse existing services instead of starting duplicates. Stop a
 host process with Ctrl+C in its terminal.
 
-Upload a room photo through Room from photo. Review detected furniture; build
-and review the partial room draft. Optionally mark a known floor distance or
-enter measured dimensions, then explicitly apply the draft. Height and
-openings can be edited manually. Big-LaMa supplies learned removal when its
-verified checkpoint is configured; the UI identifies approximate fallbacks.
+Upload a room photo through Room from photo. Furniture detection and room depth
+run together. Check the numbered boxes, uncheck incorrect detections and use
+Mark missing item to identify something the model missed. Enter approximate
+room width and length in metres or feet if known, then choose Build my room.
+The selected furniture is automatically sized and positioned in the draft in one
+undoable step. Move, rotate and resize it in the editor.
 
+When raw floor depth is supported, object surfaces are backprojected and
+projected vertically onto the floor. Their footprints extend the partial floor
+crop so furniture is not discarded outside the initially visible floor patch.
+Without supported depth, the UI labels an image-composition starting arrangement
+as a guess. Measurements are still needed to establish scale. Automatic opening
+and ceiling recovery and multi-view fusion remain unfinished.
 A single ordinary photo does not establish all hidden boundaries or exact
 physical dimensions. Invalid/unsupported depth returns insufficient evidence
 instead of fixed placeholder corners. Metric depth and a display color map

@@ -106,6 +106,26 @@ def is_model_loaded() -> bool:
     return _model is not None
 
 
+def duplicate_mask(candidate: np.ndarray, label: str, score: float, accepted) -> bool:
+    """Reject competing labels over an accepted instance, not nearby furniture.
+
+    Low-confidence table predictions often cover a bed or a piece of that bed.
+    Small masks make this check independent of input resolution and inexpensive.
+    """
+    small = cv2.resize(candidate, (128, 128), interpolation=cv2.INTER_NEAREST) > 0
+    area = int(small.sum())
+    if not area:
+        return True
+    for other, other_label, other_score in accepted:
+        overlap = int(np.logical_and(small, other).sum())
+        union = area + int(other.sum()) - overlap
+        if label == other_label and overlap / max(union, 1) > .75:
+            return True
+        if {label, other_label} == {"bed", "dining table"} and other_score - score > .15 and overlap / area > .8:
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Mask → polygon helper
 # ---------------------------------------------------------------------------
@@ -218,6 +238,7 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
 
     # ── 5. Build Detection objects ─────────────────────────────────────
     detections: list[Detection] = []
+    accepted_masks = []
     for i in range(len(boxes)):
         class_id = int(labels[i])
         label_name = (
@@ -230,9 +251,13 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
         binary_mask = (masks[i, 0] > 0.5).astype(np.uint8) * 255
         if binary_mask.shape != image.shape[:2]:
             binary_mask = cv2.resize(binary_mask, (source_w, source_h), interpolation=cv2.INTER_NEAREST)
+        if duplicate_mask(binary_mask, label_name, float(scores[i]), accepted_masks):
+            continue
         features = mask_features(image, binary_mask)
         if features is None:
             continue
+        accepted_masks.append((cv2.resize(binary_mask, (128, 128), interpolation=cv2.INTER_NEAREST) > 0,
+                               label_name, float(scores[i])))
         polygon = _mask_to_polygon(features['cleaned_mask'])
         area = float(np.sum(features['cleaned_mask'] > 0))
         thumbnail = features['thumbnail']

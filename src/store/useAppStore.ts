@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { buildPhotoLayout, type PhotoLayoutOptions } from '../services/photo-layout';
 import {
   CATALOG,
   DEFAULT_SETTINGS,
@@ -173,6 +174,7 @@ export interface AppState {
   updatePhoto: (id: string, updates: Partial<Photo>) => void;
   removePhoto: (id: string) => void;
   addDetectionAsItem: (photoId: string, detectionId: string) => void;
+  buildRoomFromPhoto: (photoId: string, options?: PhotoLayoutOptions) => ReturnType<typeof buildPhotoLayout>;
 
   /* Persistence */
   saveToStorage: () => void;
@@ -899,6 +901,16 @@ export const useAppStore = create<AppState>((set, get) => {
           ),
         })),
       }));
+    },
+
+    buildRoomFromPhoto: (photoId, options) => {
+      const project = getActive();
+      if (!project) throw new Error('Open a room before applying this layout.');
+      const result = buildPhotoLayout(project, photoId, options);
+      get().pushHistory('Build furnished room from photo');
+      updateActive(() => ({ room: result.room, items: result.items }));
+      set({ selectedItemId: null, selectedId: null, trayOpen: false, placingItem: null, placingType: null, viewMode: 'overview' });
+      return result;
     },
 
     addDetectionAsItem: (photoId, detectionId) => {

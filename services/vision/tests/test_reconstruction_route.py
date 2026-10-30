@@ -109,6 +109,13 @@ class ReconstructionRouteTests(unittest.TestCase):
         self.assertAlmostEqual(body["room_proposal"]["widthM"], 5.2, delta=.12)
         self.assertIsNone(body["room_estimate"])
 
+    def test_furniture_projection_error_keeps_the_room_and_explains_fallback(self):
+        with patch("app.routes.populate_room_proposal", side_effect=RuntimeError("test projection failure")):
+            body, _ = self.request()
+        self.assertEqual(body['room_proposal']['status'], 'estimated')
+        self.assertAlmostEqual(body['room_proposal']['widthM'], 5.2, delta=.12)
+        self.assertTrue(any('Furniture depth positions' in w for w in body['warnings']))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -40,6 +40,7 @@ from app.preprocessing import (
 )
 from app.room_analysis import detect_vanishing_points, estimate_room_boundaries
 from app.room_reconstruction import reconstruct_room, unavailable_room_proposal
+from app.furniture_layout import populate_room_proposal
 from app.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -119,6 +120,12 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
             room_proposal = unavailable_room_proposal(
                 "Room fitting could not finish. Review the original photo and use measured dimensions."
             )
+
+        try:
+            room_proposal = populate_room_proposal(room_proposal, detections, depth_map)
+        except Exception:
+            logger.exception("Furniture projection failed; keeping the floor draft")
+            room_proposal["warnings"].append("Furniture depth positions could not finish. Review the photo-based starting positions.")
 
         try:
             # Keep classical diagnostics for existing clients, but not the old

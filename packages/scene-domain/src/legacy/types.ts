@@ -65,6 +65,7 @@ export interface Detection {
   score: number;
   box: [number, number, number, number];
   source: 'model' | 'manual';
+  color?: string;
 }
 export interface Photo {
   id: string;

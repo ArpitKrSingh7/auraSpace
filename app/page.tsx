@@ -60,6 +60,7 @@ function NewRoomDialog({
           const id = useAppStore
             .getState()
             .createProject(name, dimensions[0], dimensions[1], dimensions[2]);
+          if (photo) useAppStore.getState().updateRoom({ openings: [] });
           router.push(`/editor/${id}${photo ? '?capture=1' : ''}`);
         }}
         className="space-y-5"
@@ -74,7 +75,7 @@ function NewRoomDialog({
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <div className="grid grid-cols-3 gap-3">
+        {!photo && <div className="grid grid-cols-3 gap-3">
           {['Width', 'Depth', 'Height'].map((label, i) => (
             <label key={label} className="block space-y-2">
               <span className="label">{label} (m)</span>
@@ -94,14 +95,14 @@ function NewRoomDialog({
               />
             </label>
           ))}
-        </div>
-        <div className="flex items-center justify-between rounded-xl bg-surface-100 p-4">
+        </div>}
+        {!photo && <div className="flex items-center justify-between rounded-xl bg-surface-100 p-4">
           <span className="text-xs text-surface-500">Your blank canvas</span>
           <span className="text-xl text-brand-600">
             {(dimensions[0] * dimensions[1]).toFixed(1)}{' '}
             <span className="text-sm">m²</span>
           </span>
-        </div>
+        </div>}
         <div className="flex gap-3">
           <button
             type="button"
