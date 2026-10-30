@@ -80,7 +80,7 @@ def populate_room_proposal(proposal: dict[str, Any], detections, depth: np.ndarr
     expanded = bool(np.any(lower < -.001) or np.any(upper > [proposal["widthM"] + .001, proposal["depthM"] + .001]))
     result = {**proposal, "furniture": [{**item, "centerXZ": (np.asarray(item["centerXZ"]) - lower).tolist()} for item in furniture]}
     if expanded:
-        homography = np.asarray(proposal["imageToFloor"]).reshape(3, 3).copy()
+        homography = np.asarray(proposal["imageToFloor"], dtype=np.float64).reshape(3, 3).copy()
         homography[0] -= lower[0] * homography[2]
         homography[1] -= lower[1] * homography[2]
         width_m, depth_m = size.tolist()

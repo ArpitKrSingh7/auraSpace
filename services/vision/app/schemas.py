@@ -83,6 +83,22 @@ class AnalyzeResponse(BaseModel):
     model_versions: dict[str, str] = Field(default_factory=dict)
 
 
+class RoomCapture(BaseModel):
+    id: str = Field(..., min_length=1, max_length=128, pattern=r'^[a-zA-Z0-9_.:-]+$')
+    image: str = Field(..., min_length=1, max_length=3_500_000)
+
+
+class ReconstructRequest(BaseModel):
+    photos: list[RoomCapture] = Field(..., min_length=1, max_length=5)
+
+    @field_validator('photos')
+    @classmethod
+    def unique_captures(cls, photos):
+        if len({p.id for p in photos}) != len(photos) or sum(len(p.image) for p in photos) > 3_500_000:
+            raise ValueError('Use unique photo IDs and a combined image payload below 3.5 MB')
+        return photos
+
+
 # ── /process ───────────────────────────────────────────────────────────────
 
 class ProcessRequest(BaseModel):

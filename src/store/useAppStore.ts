@@ -886,7 +886,14 @@ export const useAppStore = create<AppState>((set, get) => {
         })),
       });
       updateActive((p) => ({
-        photos: p.photos.filter((ph) => ph.id !== id),
+        photos: p.photos.filter((ph) => ph.id !== id).map((ph) => {
+          const proposal = ph.roomProposal;
+          if (!proposal?.multiView?.views.some((v) => v.photoId === id)) return ph;
+          return { ...ph, roomProposal: { ...proposal,
+            multiView: { ...proposal.multiView, views: proposal.multiView.views.filter((v) => v.photoId !== id) },
+            furniture: proposal.furniture?.filter((pose) => pose.photoId !== id),
+          } };
+        }),
         items: p.items.map((i) =>
           i.photoId === id
             ? { ...i, photoId: undefined, detectionId: undefined }

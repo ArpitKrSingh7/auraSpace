@@ -46,7 +46,9 @@ There is no need to start the API, worker, database, Redis, Expo or an emulator
 for this flow. Reuse existing services instead of starting duplicates. Stop a
 host process with Ctrl+C in its terminal.
 
-Upload a room photo through Room from photo. Furniture detection and room depth
+Upload 1–5 photos of the same room through Room from photo. One is enough;
+3–5 overlapping views from different positions give alignment more evidence.
+Furniture detection and room depth
 run together. Check the numbered boxes, uncheck incorrect detections and use
 Mark missing item to identify something the model missed. Enter approximate
 room width and length in metres or feet if known, then choose Build my room.
@@ -58,7 +60,14 @@ projected vertically onto the floor. Their footprints extend the partial floor
 crop so furniture is not discarded outside the initially visible floor patch.
 Without supported depth, the UI labels an image-composition starting arrangement
 as a guess. Measurements are still needed to establish scale. Automatic opening
-and ceiling recovery and multi-view fusion remain unfinished.
+and ceiling recovery remain unfinished. Multi-view registration is experimental:
+only geometrically supported views share a floor frame and furniture positions.
+Other photos remain in the gallery as references; their items start unchecked
+to avoid duplicates. Low quality is advisory, not a mandatory retake gate.
+The batch endpoint is `/api/vision/reconstruct` → Python `/reconstruct`. It
+processes views sequentially with a roughly two-minute analysis budget and
+keeps completed work when a view fails or the budget runs out. Browser previews
+are resized to at most 1280 pixels on the long side to bound upload/storage use.
 A single ordinary photo does not establish all hidden boundaries or exact
 physical dimensions. Invalid/unsupported depth returns insufficient evidence
 instead of fixed placeholder corners. Metric depth and a display color map

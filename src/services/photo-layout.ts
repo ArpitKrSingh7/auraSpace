@@ -9,6 +9,24 @@ export interface PhotoLayoutOptions {
   depthM?: number;
 }
 
+/** Keep detections on their source photo instead of mixing image coordinates. */
+export function photoLayoutObservations(project: Project, photoId: string) {
+  const anchor = project.photos.find((p) => p.id === photoId);
+  if (!anchor) return [];
+  const views = anchor.roomProposal?.multiView?.views;
+  const fused = views?.some((v) => v.status === 'aligned') && !!anchor.roomProposal?.furniture?.length;
+  const group = views ? project.photos.filter((p) => views.some((v) => v.photoId === p.id)) : [anchor];
+  return group.flatMap((photo) => {
+    const distinct = new Set(distinctPhotoDetections(photo.detections).map((d) => d.id));
+    return photo.detections.map((detection) => ({
+      photo, detection, key: `${photo.id}:${detection.id}`,
+      defaultSelected: distinct.has(detection.id) && (fused ?
+        !!anchor.roomProposal?.furniture?.some((pose) => (pose.photoId ?? photoId) === photo.id && detection.id === `det-${pose.detectionIndex}`) : photo.id === photoId),
+      reference: views?.find((v) => v.photoId === photo.id)?.status === 'reference',
+    }));
+  });
+}
+
 /** Remove conflicting labels for the same large object, not separate objects. */
 export function distinctPhotoDetections(detections: Detection[]): Detection[] {
   const kept: Detection[] = [];
@@ -35,9 +53,9 @@ const ranges = {
   table: { width: [.65, 2.5], depth: [.4, 1.2], height: [.55, 1.1] },
 } as const;
 
-function fitPosition(item: FurnitureItem, room: Room, obstacles: FurnitureItem[], target: { x: number; z: number }) {
+function fitPosition(item: FurnitureItem, room: Room, obstacles: FurnitureItem[], target: { x: number; z: number }, preservePose = false) {
   let best: FurnitureItem | undefined, cost = Infinity;
-  for (const angle of [item.rotation, normalizeRotation(item.rotation + 90)]) {
+  for (const angle of preservePose ? [] : [item.rotation, normalizeRotation(item.rotation + 90)]) {
     const atOrigin = { ...item, rotation: angle, x: 0, z: 0 };
     const corners = getCorners(atOrigin);
     const halfX = Math.max(...corners.map((p) => Math.abs(p.x)));
@@ -71,7 +89,8 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
   for (const value of [options.widthM, options.depthM])
     if (value !== undefined && (!Number.isFinite(value) || value < 1 || value > 40)) throw new Error('Room width and length must be between 1 and 40 metres.');
   const proposal = photo.roomProposal;
-  const supported = proposal?.status === 'estimated' && proposal.source === 'model-estimated' && !!proposal.furniture?.length;
+  const fused = proposal?.multiView?.views.some((v) => v.status === 'aligned');
+  const supported = proposal?.status === 'estimated' && proposal.source === 'model-estimated' && !!proposal.widthM && !!proposal.depthM;
   const keepSize = project.items.some((item) => item.placed);
   const keepWidth = keepSize || ['user-measured', 'product-specification'].includes(project.room.dimensionSources?.width ?? '');
   const keepDepth = keepSize || ['user-measured', 'product-specification'].includes(project.room.dimensionSources?.depth ?? '');
@@ -88,24 +107,25 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
       width: options.widthM !== undefined ? 'user-measured' : supported && !keepWidth ? calibrated ? 'calibrated-estimate' : 'model-estimated' : project.room.dimensionSources?.width ?? 'category-prior',
       depth: options.depthM !== undefined ? 'user-measured' : supported && !keepDepth ? calibrated ? 'calibrated-estimate' : 'model-estimated' : project.room.dimensionSources?.depth ?? 'category-prior' },
   });
-  const selected = new Set(options.selectedIds ?? distinctPhotoDetections(photo.detections).map((d) => d.id));
-  const detections = photo.detections.filter((d) => selected.has(d.id));
-  if (!detections.length) throw new Error('Select at least one item, or mark a missing item in the photo.');
+  const observations = photoLayoutObservations(project, photoId);
+  const selected = new Set(options.selectedIds ?? observations.filter((o) => o.defaultSelected).map((o) => o.key));
+  const detections = observations.filter((o) => selected.has(o.key) || (o.photo.id === photoId && selected.has(o.detection.id)));
+  if (!detections.length && observations.length) throw new Error('Select at least one item, or mark a missing item in the photo.');
   // A different view of this same room must not duplicate the previous draft.
   // Preserve intentional edits and manually added furniture across rebuilds.
   const retained = project.items.filter((item) => !item.photoId || item.locked || item.source === 'measured');
   const sx = supported ? width / proposal!.widthM! : 1, sz = supported ? depth / proposal!.depthM! : 1;
   const counts: Record<string, number> = {};
-  const pending = detections.filter((d) => !retained.some((item) => item.photoId === photoId && item.detectionId === d.id)).map((detection) => {
-    const pose = supported ? proposal!.furniture?.find((p) => detection.id === `det-${p.detectionIndex}`) : undefined;
-    const item = makeItem(detection.type, { id: `${photo.id}-${detection.id}`.slice(0, 128), photoId, detectionId: detection.id, placed: true,
+  const pending = detections.filter((o) => !retained.some((item) => item.photoId === o.photo.id && item.detectionId === o.detection.id)).map(({ detection, photo: sourcePhoto }) => {
+    const pose = supported ? proposal!.furniture?.find((p) => detection.id === `det-${p.detectionIndex}` && (p.photoId ?? photoId) === sourcePhoto.id) : undefined;
+    const item = makeItem(detection.type, { id: `${sourcePhoto.id}-${detection.id}`.slice(0, 128), photoId: sourcePhoto.id, detectionId: detection.id, placed: true,
       source: 'estimated', name: `${detection.type === 'table' ? 'Study table' : detection.type === 'bed' ? 'Bed' : detection.type === 'chair' ? 'Chair' : detection.label} ${counts[detection.type] = (counts[detection.type] ?? 0) + 1}`,
       ...(detection.color ? { color: detection.color } : {}),
       ...(detection.type === 'bed' ? { width: .95, depth: 2, height: .6 } : {}),
       ...(detection.type === 'table' || detection.type === 'desk' ? { width: 1.3, depth: .65, height: .75 } : {}),
     });
-    let target = { x: (detection.box[0] + detection.box[2] / 2) / photo.width * width,
-      z: clamp((detection.box[1] + detection.box[3]) / photo.height, .05, .95) * depth };
+    let target = { x: (detection.box[0] + detection.box[2] / 2) / sourcePhoto.width * width,
+      z: clamp((detection.box[1] + detection.box[3]) / sourcePhoto.height, .05, .95) * depth };
     if (pose) {
       const radians = pose.rotationDeg * Math.PI / 180;
       item.width = Math.hypot(Math.cos(radians) * pose.widthM * sx, Math.sin(radians) * pose.widthM * sz);
@@ -113,12 +133,12 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
       item.height = pose.heightM * Math.sqrt(sx * sz);
       item.rotation = normalizeRotation(Math.atan2(Math.sin(radians) * sz, Math.cos(radians) * sx) * 180 / Math.PI);
       const snapped = normalizeRotation(Math.round(item.rotation / 90) * 90);
-      if (Math.abs(Math.atan2(Math.sin((snapped - item.rotation) * Math.PI / 180), Math.cos((snapped - item.rotation) * Math.PI / 180))) < Math.PI / 6) item.rotation = snapped;
+      if (!fused && Math.abs(Math.atan2(Math.sin((snapped - item.rotation) * Math.PI / 180), Math.cos((snapped - item.rotation) * Math.PI / 180))) < Math.PI / 6) item.rotation = snapped;
       target = { x: pose.centerXZ[0] * sx, z: pose.centerXZ[1] * sz };
       const range = ranges[detection.type as keyof typeof ranges];
       if (range) for (const axis of ['width', 'depth', 'height'] as const) item[axis] = clamp(item[axis], range[axis][0], range[axis][1]);
       const [bx, by, bw, bh] = detection.box;
-      const cropped = bx < photo.width * .015 || by < photo.height * .015 || bx + bw > photo.width * .985 || by + bh > photo.height * .985;
+      const cropped = bx < sourcePhoto.width * .015 || by < sourcePhoto.height * .015 || bx + bw > sourcePhoto.width * .985 || by + bh > sourcePhoto.height * .985;
       if (cropped && (item.type === 'table' || item.type === 'desk')) {
         // A clipped tabletop does not establish the full desk dimensions.
         item.width = 1.3; item.depth = .65; item.height = .75;
@@ -128,8 +148,8 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
     return { item: validateItem(item), target, projected: !!pose };
   }).sort((a, b) => b.item.width * b.item.depth - a.item.width * a.item.depth);
   const items = [...retained], added: FurnitureItem[] = [];
-  for (const { item, target } of pending) {
-    const placed = fitPosition(item, room, items.filter((i) => i.placed), target);
+  for (const { item, target, projected } of pending) {
+    const placed = fitPosition(item, room, items.filter((i) => i.placed), target, !!fused && projected);
     items.push(placed); added.push(placed);
   }
   const warnings = added.flatMap((item) => validatePlacement(item, room, items).map((warning) => `${item.name}: ${warning}`));

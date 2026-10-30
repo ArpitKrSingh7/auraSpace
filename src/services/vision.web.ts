@@ -12,6 +12,7 @@ import {
 import type { ImageOperation, Progress } from './vision-core';
 import { mapRoomProposalToSource } from './reconstruction-core';
 import type { RoomReconstructionProposal } from '../../packages/scene-domain/src/index';
+import { parseRoomViewsResponse } from './multi-photo-core';
 export { VisionError } from './vision-core';
 
 const endpoint = process.env.NEXT_PUBLIC_VISION_API_URL
@@ -210,6 +211,47 @@ export async function analyzeRoomScene(photo: Photo, onProgress?: Progress): Pro
     return { detections, roomProposal: mapRoomProposalToSource(result.room_proposal, canvas, photo) };
   } catch {
     throw new VisionError('The service did not return a usable room proposal. Check its version or try another view.');
+  }
+}
+
+/** A single bounded batch; optional alignment never blocks a best-view draft. */
+export async function analyzeRoomViews(photos: Photo[], onProgress?: Progress) {
+  if (!photos.length || photos.length > 5) throw new VisionError('Choose between one and five photos.');
+  if (photos.length === 1) {
+    const result = await analyzeRoomScene(photos[0], onProgress);
+    return { anchorPhotoId: photos[0].id, roomProposal: result.roomProposal,
+      updates: [{ photoId: photos[0].id, detections: result.detections, analyzed: true }] };
+  }
+  onProgress?.(`Finding furniture across ${photos.length} photos. This usually takes a minute or two…`);
+  let maxSide = 1280, quality = .82;
+  let payload: { id: string; image: string }[] = [];
+  for (let attempt = 0; attempt < 4; attempt++) {
+    payload = [];
+    for (const photo of photos) {
+      const canvas = await canvasFor(photo, maxSide);
+      payload.push({ id: photo.id, image: canvas.toDataURL('image/jpeg', quality) });
+    }
+    if (JSON.stringify({ photos: payload }).length < 3_400_000) break;
+    maxSide = Math.round(maxSide * .8); quality -= .08;
+  }
+  try {
+    const raw = await postVision('/api/vision', 'reconstruct', { photos: payload });
+    return parseRoomViewsResponse(raw, photos);
+  } catch {
+    onProgress?.('Multi-photo analysis is unavailable. Building from one photo; keeping the others as references…');
+    // Keep the upload usable on older/offline deployments too.
+    for (const photo of photos) {
+      try {
+        const result = await analyzeRoomScene(photo, onProgress);
+        const roomProposal: RoomReconstructionProposal = { ...result.roomProposal,
+          multiView: { anchorPhotoId: photo.id, views: photos.map((p) => ({ photoId: p.id,
+            status: p.id === photo.id ? 'anchor' as const : 'reference' as const,
+            message: p.id === photo.id ? 'Starting view for your draft.' : 'Kept as a reference; multi-photo analysis was unavailable.' })) } };
+        return { anchorPhotoId: photo.id, roomProposal,
+          updates: photos.map((p) => ({ photoId: p.id, detections: p.id === photo.id ? result.detections : p.detections, analyzed: p.id === photo.id })) };
+      } catch { /* A broken view must not discard the other photos. */ }
+    }
+    throw new VisionError('Analysis could not finish. Your photos are saved; mark furniture to continue.');
   }
 }
 

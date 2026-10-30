@@ -11,7 +11,8 @@ a user enter room measurements or upload a photo, review approximate structure
 and detected furniture, then arrange editable assets before moving real items.
 
 1. Create/open a browser-local room or explore a sample.
-2. Enter room dimensions, or upload an original room photograph.
+2. Enter room dimensions, or upload 1–5 room photographs; recommend overlapping
+   views without imposing a minimum photo count or a quality rejection gate.
 3. Review numbered furniture boxes and a partial floor/wall draft. Correct
    missed/wrong detections and enter room width/length in feet or metres.
 4. Open a populated draft with reviewed detections automatically placed.
@@ -109,8 +110,9 @@ Next priorities:
    cases and correction effort before claiming reconstruction accuracy.
 3. Improve supported wall/corner recovery and add reviewed opening detection,
    ceiling/height recovery and irregular-room proposals where evidence permits.
-4. Add multi-photo alignment/fusion only with recoverable camera poses and
-   sufficient overlap; unrelated depth maps cannot simply be averaged.
+4. Evaluate the experimental multi-photo registration on independent measured
+   rooms, improve overlap/matching and quantify duplicate/position errors.
+   Unrelated depth maps must never be averaged to invent room dimensions.
 5. If required, connect the website to the optional account/cloud-job backend
    and implement conflict-aware project restore. Browser-local rooms do not
    become cloud-synced merely by deploying those services.
@@ -142,4 +144,44 @@ boxes, missing-item annotation, optional room width/length, estimated item sizes
 and one Build my room action that opens the pre-arranged draft.
 Measured dimensions and unrelated/locked furniture are preserved. Model recall
 uses reviewable lower-confidence candidates and mask-based duplicate rejection.
-Multi-photo pose alignment/fusion and automatic openings remain separate work.
+Automatic openings remain separate work.
+
+## Forgiving multi-photo implementation
+
+Users can upload 1–5 photos in one selection. Recommend 3–5 overlapping views
+from different positions, normal 1× camera, visible floor and some shared
+furniture. A real measurement remains optional and strongly improves scale.
+Readable difficult photos are retained; sharpness/light feedback is advisory.
+
+The new compact batch endpoint reuses the existing detector and depth model
+sequentially, with bounded resolution, payload and processing time. It chooses
+the best supported starting view. OpenCV RootSIFT mutual matches, epipolar
+filtering, depth backprojection and robust Sim(3) fitting estimate relative
+camera frames. Minimum support, spatial spread, depth residual, reprojection,
+scale and independently available floor-plane checks guard fusion. Connected
+views can share the starting floor, allowing projection of furniture from a
+photo that could not fit its own floor. Observed floor extents are transformed,
+not averaged; boundaries remain uncertain. Same-category spatial duplicates
+are merged only after alignment. Close identical items can still be confused.
+
+Each photo retains its own detections and pixel coordinates. The proposal
+references source photos for shared world poses. A gallery labels the starting,
+aligned and reference views. Reference observations are optional and start
+unchecked. Users can mark missing items in any view. Building remains one
+undoable action. Aligned poses keep their observed arrangement, with containment
+adjustments and visible overlap warnings; the single-view fallback retains the
+existing fit/packing behavior. JSON export, copying and photo removal preserve
+or detach source references.
+
+Time-limited/unmatched views remain references. If alignment fails, the best
+single-view furnished draft remains usable. This is sparse, depth-assisted
+registration, not dense photogrammetry, bundle adjustment, texture reconstruction
+or a guaranteed scan. No additional learned model weights were introduced.
+
+Validation includes an independently rendered textured room with known camera
+movement, noisy/outlier transform recovery, shared-floor furniture projection,
+duplicate handling, dark/corrupt/unrelated views, time-budget fallback, source
+coordinate scaling and build/undo/export behavior. In a cached-inference replay
+of the supplied two real views, alignment was unsupported: the doorway view
+remained the four-item starting draft and the other photo stayed a reference.
+This result does not establish a 60–75% real-room accuracy rate.

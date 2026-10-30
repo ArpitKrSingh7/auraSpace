@@ -50,11 +50,35 @@ from app.schemas import (
     InpaintResponse,
     ProcessRequest,
     ProcessResponse,
+    ReconstructRequest,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _analyze_capture(image):
+    """Compact internal analysis: raw depth stays in memory, never in JSON."""
+    detections = detect_furniture(image)
+    depth = None
+    proposal = unavailable_room_proposal('Depth could not finish. Furniture can still be placed in an editable draft.')
+    try:
+        result = estimate_depth_result(image)
+        if result.units == 'meters':
+            depth = result.values
+        boxes = [[d.box.x1, d.box.y1, d.box.x2-d.box.x1, d.box.y2-d.box.y1] for d in detections]
+        proposal = reconstruct_room(image, depth=depth, depth_units=result.units, boxes=boxes)
+        proposal = populate_room_proposal(proposal, detections, depth)
+    except Exception:
+        logger.exception('Optional geometry failed for one view; keeping furniture')
+    return detections, depth, proposal
+
+
+@router.post('/reconstruct', summary='Build a room draft from up to five views')
+def reconstruct_photos(req: ReconstructRequest):
+    from app.multi_view import reconstruct_views
+    return reconstruct_views(req.photos, _analyze_capture, decode_base64_image)
 
 
 @router.post(

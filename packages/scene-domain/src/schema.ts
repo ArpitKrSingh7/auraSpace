@@ -58,8 +58,19 @@ const reconstructionProposal = z.object({
   boundaryEdges: z.array(z.enum(['observed-wall', 'view-limit'])).min(3).max(64).optional(),
   warnings: z.array(z.string().max(500)).max(20),
   openings: z.array(reconstructionOpeningSchema).max(20).optional(),
+  multiView: z.object({
+    anchorPhotoId: id,
+    views: z.array(z.object({
+      photoId: id,
+      status: z.enum(['anchor', 'aligned', 'reference']),
+      message: z.string().max(500),
+      inlierCount: z.number().int().nonnegative().optional(),
+      residualM: finite.nonnegative().optional(),
+    })).min(1).max(5),
+  }).optional(),
   furniture: z.array(z.object({
     detectionIndex: z.number().int().min(0).max(99),
+    photoId: id.optional(),
     centerXZ: point,
     widthM: finite.positive().max(20), depthM: finite.positive().max(20),
     heightM: finite.positive().max(12), rotationDeg: finite.min(0).max(360),
@@ -67,6 +78,15 @@ const reconstructionProposal = z.object({
   })).max(100).optional(),
 }).superRefine((proposal, ctx) => {
   const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  if (proposal.multiView) {
+    const { anchorPhotoId, views } = proposal.multiView;
+    if (new Set(views.map((v) => v.photoId)).size !== views.length ||
+      views.filter((v) => v.status === 'anchor').length !== 1 ||
+      !views.some((v) => v.photoId === anchorPhotoId && v.status === 'anchor'))
+      issue('Multi-photo views need unique IDs and one matching starting view');
+    if (proposal.furniture?.some((pose) => !views.some((v) => v.photoId === (pose.photoId ?? anchorPhotoId) && v.status !== 'reference')))
+      issue('Furniture geometry must refer to a registered photo');
+  }
   if (proposal.status === 'estimated' &&
     (proposal.source !== 'model-estimated' ||
       (!proposal.floorPolygonXZ && !(proposal.widthM && proposal.depthM))))
