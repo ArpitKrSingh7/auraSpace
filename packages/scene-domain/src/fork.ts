@@ -18,6 +18,12 @@ export function forkDocument(
   document.createdAt = document.updatedAt = new Date().toISOString();
   for (const c of document.scene.captures) {
     c.id = captures.get(c.id)!;
+    if (c.roomProposal?.multiView) {
+      c.roomProposal.multiView.anchorPhotoId = captures.get(c.roomProposal.multiView.anchorPhotoId)!;
+      for (const view of c.roomProposal.multiView.views) view.photoId = captures.get(view.photoId)!;
+      for (const pose of c.roomProposal.furniture ?? [])
+        if (pose.photoId) pose.photoId = captures.get(pose.photoId)!;
+    }
     c.originalAssetId = assets.get(c.originalAssetId)!;
     c.analysisAssetId = c.analysisAssetId
       ? assets.get(c.analysisAssetId)

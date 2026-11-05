@@ -26,10 +26,12 @@ inside the room.
 - **Household furniture library:** choose from 19 categories, including beds,
   chairs, desks, wardrobes/almirahs, dressing tables, mirrors, split ACs,
   ceiling fans and storage. Use custom boxes for unusual objects.
-- **Photo-assisted planning:** detect supported furniture, review an estimated
+- **Photo-assisted planning:** upload 1–5 views, detect supported furniture, review an estimated
   floor/wall draft and open a populated starting layout. Check the numbered
   detections, mark missed items, and enter room width/length in feet or metres.
-- **Image tools:** inspect grayscale, contrast, edges and contours, and create
+  Overlapping views can share a floor frame; difficult views stay in a reference
+  gallery and the best available view supplies the fallback draft.
+- **Image tools:** inspect grayscale, contrast and Sobel edges, and create
   approximate furniture-removal previews.
 - **Save and compare:** keep alternative layouts in the browser, export an
   importable JSON project, download a dimensioned SVG plan or capture a PNG view.
@@ -41,8 +43,9 @@ detection and approximate removal fallbacks are also available.
 ## How it works
 
 1. **Start a room.** Open a sample or create a project using room measurements
-   or an original photograph. For photo estimates, shoot from a corner or
-   doorway with plenty of floor and two adjoining walls visible.
+   or 1–5 photographs. One photo is enough to start. For better coverage, move
+   around the room and take 3–5 overlapping views with floor, walls and some
+   of the same furniture visible. Use the normal 1× camera.
 2. **Review the estimate.** For photo-based planning, check detected furniture
    and the visible floor/wall draft. Uncheck wrong boxes, mark missed items,
    and enter room width and length if known.
@@ -55,6 +58,15 @@ detection and approximate removal fallbacks are also available.
 Photo reconstruction is experimental. Hidden room boundaries and exact object
 dimensions cannot be reliably recovered from a single ordinary photograph.
 All estimates remain editable.
+
+Multi-photo alignment is experimental too. The backend uses OpenCV RootSIFT
+matches, depth-backed similarity-transform RANSAC and reprojection/floor checks.
+Only supported views contribute geometry; room dimensions from unrelated views
+are never averaged. Repeated furniture is merged by category and spatial
+proximity after alignment. This can still need correction. Unmatched views
+remain available for checking or manually marking items, which start unchecked.
+Analysis runs sequentially within a time budget; unprocessed photos remain
+references. No additional model download, database or worker is required.
 
 ## Image processing, computer vision and computer graphics
 
@@ -176,8 +188,11 @@ behavior and reconstruction accuracy.
 ## Current limitations
 
 - Room reconstruction produces a partial, approximate draft. Automatic
-  door/window detection, ceiling/height recovery and multi-photo fusion remain
-  future work.
+  door/window detection and ceiling/height recovery remain future work.
+  Sparse multi-photo registration is experimental; dense reconstruction is absent.
+- Two-point floor calibration, reviewed removal masks, CLAHE, contours and
+  histogram inspection have backend/shared support but are not exposed by the
+  current web review screen. See [the implementation audit](AUDIT.md).
 - Detector coverage is narrower than the furniture library. Unsupported items
   can be added manually with editable dimensions.
 - Removal synthesizes hidden surfaces. Use the original photograph for geometry
@@ -190,7 +205,9 @@ See [PLAN.md](PLAN.md) for implementation details and next priorities.
 
 ## Privacy and storage
 
-Projects and imported photos are saved in the current browser. Photos used for
+Projects and resized JPEG copies of imported photos are saved in the current
+browser; the upload flow does not retain the full-resolution original file or
+its camera metadata. Photos used for
 server-based AI analysis are sent to the backend for processing. The current
 website does not automatically publish rooms or provide a central gallery of
 uploaded projects. Clearing browser data can remove saved work. Exported JSON

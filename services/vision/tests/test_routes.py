@@ -34,6 +34,19 @@ class TestRoutes(unittest.TestCase):
         self.assertEqual(response.json()['image_dimensions'], {'width': 100, 'height': 80})
         self.assertEqual(response.json()['detections'][0]['box'], {'x1': 10, 'y1': 20, 'x2': 30, 'y2': 50})
 
+    def test_compact_analysis_disables_unused_detection_artifacts(self):
+        with patch('app.routes.detect_furniture', return_value=[]) as detect:
+            response = self.client.post('/analyze', json={'image': self.image, 'include_artifacts': False})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(detect.call_args.kwargs['include_artifacts'])
+
+    def test_empty_or_full_masks_are_rejected_before_lama_inference(self):
+        with patch('app.routes.lama_ready', return_value=True), patch('app.routes.lama_inpaint') as lama:
+            for box in [[0, 0, 100, 80], [110, 90, 10, 10]]:
+                response = self.client.post('/inpaint', json={'image': self.image, 'boxes': [box]})
+                self.assertEqual(response.status_code, 400, response.text)
+        lama.assert_not_called()
+
     def test_invalid_images_and_health(self):
         self.assertEqual(self.client.post('/process', json={'image': 'invalid', 'operation': 'edges'}).status_code, 400)
         self.assertEqual(self.client.get('/health').status_code, 200)

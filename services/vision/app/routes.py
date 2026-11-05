@@ -50,11 +50,35 @@ from app.schemas import (
     InpaintResponse,
     ProcessRequest,
     ProcessResponse,
+    ReconstructRequest,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _analyze_capture(image):
+    """Compact internal analysis: raw depth stays in memory, never in JSON."""
+    detections = detect_furniture(image, include_artifacts=False)
+    depth = None
+    proposal = unavailable_room_proposal('Depth could not finish. Furniture can still be placed in an editable draft.')
+    try:
+        result = estimate_depth_result(image)
+        if result.units == 'meters':
+            depth = result.values
+        boxes = [[d.box.x1, d.box.y1, d.box.x2-d.box.x1, d.box.y2-d.box.y1] for d in detections]
+        proposal = reconstruct_room(image, depth=depth, depth_units=result.units, boxes=boxes)
+        proposal = populate_room_proposal(proposal, detections, depth)
+    except Exception:
+        logger.exception('Optional geometry failed for one view; keeping furniture')
+    return detections, depth, proposal
+
+
+@router.post('/reconstruct', summary='Build a room draft from up to five views')
+def reconstruct_photos(req: ReconstructRequest):
+    from app.multi_view import reconstruct_views
+    return reconstruct_views(req.photos, _analyze_capture, decode_base64_image)
 
 
 @router.post(
@@ -79,7 +103,7 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
 
     # 1. Furniture detection
     try:
-        detections = detect_furniture(image)
+        detections = detect_furniture(image, include_artifacts=req.include_artifacts)
     except Exception as exc:
         logger.error(f"Inference error in /analyze: {exc}")
         raise HTTPException(
@@ -234,6 +258,10 @@ def inpaint_room(req: InpaintRequest) -> InpaintResponse:
 
     try:
         mask = reviewed_mask(image.shape, req.masks) if req.masks else create_removal_mask(image.shape, req.boxes, dilation_iterations=2)
+        # Validate before selecting a model: LaMa must not bypass the same
+        # empty/full-selection checks enforced by the OpenCV fallback.
+        if not np.any(mask) or np.all(mask):
+            raise ValueError('Select part of the image and leave surrounding surfaces visible')
         warnings = ["Hidden surfaces are synthesized. Preserve the original as the geometry evidence."]
         if req.prefer_lama and lama_ready():
             try:

@@ -246,6 +246,23 @@ export function approximateSurfaceFill(
   return output;
 }
 
+/** Compose on the browser's source raster, undoing JPEG changes outside the mask. */
+export function compositeRemovalPixels(
+  original: Uint8ClampedArray,
+  generated: Uint8ClampedArray,
+  mask: Uint8ClampedArray,
+): Uint8ClampedArray {
+  if (!original.length || original.length % 4 || original.length !== generated.length || original.length !== mask.length)
+    throw new VisionError('The removal preview and mask do not match the source image.', 'bad-response');
+  const output = new Uint8ClampedArray(original);
+  for (let i = 0; i < original.length; i += 4) {
+    if (mask[i] > 0) {
+      output[i] = generated[i]; output[i + 1] = generated[i + 1]; output[i + 2] = generated[i + 2];
+    }
+  }
+  return output;
+}
+
 export async function postVision(
   endpoint: string,
   operation: string,

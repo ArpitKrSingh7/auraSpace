@@ -2,7 +2,7 @@
 
 import { PrivacyNotice } from '@/components/privacy/PrivacyNotice';
 import { Dialog } from '@/components/ui/Dialog';
-import type { Detection, FurnitureType } from '@/domain/types';
+import type { Detection, FurnitureType, Photo } from '@/domain/types';
 import { useAppStore } from '@/store/useAppStore';
 import { Camera, Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -17,7 +17,7 @@ export function PhotoUploadDialog({
   const { addPhoto, addToast } = useAppStore();
   const project = useAppStore((s) => s.activeProject());
   const [analyzing, setAnalyzing] = useState(false);
-  const lastPhoto = project?.photos[project.photos.length - 1];
+  const lastPhoto = project?.photos.slice().reverse().find((p) => p.roomProposal) ?? project?.photos[project.photos.length - 1];
   const [preview, setPreview] = useState<string | null>(lastPhoto?.uri ?? null);
   const [detections, setDetections] = useState<Detection[]>(
     lastPhoto?.detections ?? [],
@@ -38,95 +38,67 @@ export function PhotoUploadDialog({
   }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file: File) => {
-    if (analyzing) return;
-    if (
-      !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
-      file.size > 8_000_000
-    ) {
-      addToast('Choose a JPG, PNG, or WebP image smaller than 8 MB.', 'error');
-      return;
-    }
+  const handleFiles = async (files: File[]) => {
+    if (analyzing || !files.length) return;
     const originalProjectId = useAppStore.getState().activeProjectId;
-    setAnalyzing(true);
-    setFailed(false);
-    setIsSample(false);
-    setDetections([]);
-    setAnalysisMessage('Opening your photo…');
-    let id: string | null = null;
+    if (!originalProjectId) return;
+    const photos: Photo[] = [];
+    let skipped = Math.max(0, files.length - 5);
+    setAnalyzing(true); setFailed(false); setIsSample(false); setDetections([]);
+    setAnalysisMessage('Opening your room photos…');
     try {
-      const dataUri = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error('The file could not be read.'));
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-      const img = new window.Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () =>
-          reject(new Error('This file is not a readable image.'));
-        img.src = dataUri;
-      });
-      if (
-        !img.naturalWidth ||
-        img.naturalWidth * img.naturalHeight > 20_000_000
-      )
-        throw new Error('Choose a photo below 20 megapixels.');
-      if (
-        !mountedRef.current ||
-        useAppStore.getState().activeProjectId !== originalProjectId
-      )
-        return;
-      id = `photo-${crypto.randomUUID()}`;
-      const photo = {
-        id,
-        uri: dataUri,
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        name: file.name,
-        detections: [] as Detection[],
-        analysisStatus: 'running' as const,
-      };
-      setPreview(dataUri);
-      setPhotoId(id);
-      addPhoto(photo);
-      const vision = await import('@/services/vision.web');
-      const result = await vision.analyzeRoomScene(photo, (msg) => {
-        if (mountedRef.current) setAnalysisMessage(msg);
-      });
-      // A result belongs to the project that requested it, even after navigation.
-      useAppStore.getState().updatePhotoInProject(originalProjectId!, id, {
-        detections: result.detections,
-        roomProposal: result.roomProposal,
-        analysisStatus: 'complete',
-      });
+      for (const file of files.slice(0, 5)) {
+        try {
+          if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8_000_000)
+            throw new Error('Unsupported file');
+          const dataUri = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error('Unreadable file'));
+            reader.onload = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+          });
+          const img = new window.Image();
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve(); img.onerror = () => reject(new Error('Unreadable image')); img.src = dataUri;
+          });
+          if (!img.naturalWidth || img.naturalWidth * img.naturalHeight > 20_000_000) throw new Error('Image too large');
+          // Store bounded previews so several phone photos fit browser storage.
+          const scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
+          const context = canvas.getContext('2d');
+          if (!context) throw new Error('Image processing unavailable');
+          context.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const photo: Photo = { id: `photo-${crypto.randomUUID()}`, uri: canvas.toDataURL('image/jpeg', .8),
+            width: canvas.width, height: canvas.height, name: file.name, detections: [], analysisStatus: 'running' };
+          photos.push(photo);
+        } catch { skipped++; }
+      }
+      if (!mountedRef.current || useAppStore.getState().activeProjectId !== originalProjectId) return;
+      if (!photos.length) throw new Error('Choose a readable JPG, PNG or WebP below 8 MB and 20 MP.');
+      if ((useAppStore.getState().activeProject()?.photos.length ?? 0) + photos.length > 30)
+        throw new Error('This project already has too many photos. Start a new room for this set.');
+      for (const photo of photos) addPhoto(photo);
+      setPreview(photos[0].uri); setPhotoId(photos[0].id);
+      if (skipped) addToast(`${photos.length} photos opened. ${skipped} unreadable, oversized or extra files were skipped.`, 'warning');
+      const { analyzeRoomViews } = await import('@/services/vision.web');
+      const result = await analyzeRoomViews(photos, (msg) => { if (mountedRef.current) setAnalysisMessage(msg); });
+      for (const update of result.updates) {
+        useAppStore.getState().updatePhotoInProject(originalProjectId, update.photoId, {
+          detections: update.detections, analysisStatus: update.analyzed ? 'complete' : 'idle',
+          ...(update.photoId === result.anchorPhotoId ? { roomProposal: result.roomProposal } : {}),
+        });
+      }
       if (mountedRef.current) {
-        setDetections(result.detections);
-        setAnalysisMessage(
-          result.detections.length
-            ? 'Your photo is ready. Check the furniture, then open your furnished room.'
-            : 'No furniture found. Mark the items in your photo to build a starting layout.',
-        );
+        const anchor = photos.find((p) => p.id === result.anchorPhotoId)!;
+        setPhotoId(anchor.id); setPreview(anchor.uri);
+        setAnalysisMessage('Your draft is ready. Check the furniture, then open your room.');
       }
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Analysis failed. You can add furniture manually.';
-      if (id)
-        useAppStore.getState().updatePhotoInProject(originalProjectId!, id, {
-          analysisStatus: 'failed',
-          analysisMessage: message,
-        });
-      if (mountedRef.current) {
-        setFailed(true);
-        setAnalysisMessage(message);
-        addToast(message, 'warning');
-      }
-    } finally {
-      if (mountedRef.current) setAnalyzing(false);
-    }
+      const message = error instanceof Error ? error.message : 'Analysis could not finish. You can mark furniture manually.';
+      for (const photo of photos) useAppStore.getState().updatePhotoInProject(originalProjectId, photo.id, { analysisStatus: 'failed', analysisMessage: message });
+      if (mountedRef.current) { setFailed(true); setAnalysisMessage(message); addToast(message, 'warning'); }
+    } finally { if (mountedRef.current) setAnalyzing(false); }
   };
 
   const loadPresetSample = (type: 'living' | 'bedroom') => {
@@ -249,7 +221,7 @@ export function PhotoUploadDialog({
       maxWidth="max-w-lg"
     >
       {!preview && <p className="mb-5 text-sm leading-relaxed text-surface-500">
-        Upload a room photo. We’ll find furniture and put it into an editable
+        Upload 1–5 photos of the same room. We’ll find furniture and put it into an editable
         starting layout for you.
       </p>}
 
@@ -265,23 +237,21 @@ export function PhotoUploadDialog({
               Get a better room draft
             </h3>
             <p className="mt-1 text-xs leading-relaxed text-surface-600">
-              Take a landscape photo from a corner or doorway, looking
-              diagonally across the room. Include plenty of floor and two
-              adjoining walls, with their edges clearly visible.
+              One photo is enough to start. For a better draft, add 3–5 overlapping views while moving around the room. Keep some of the same furniture and floor visible in neighbouring photos.
             </p>
             <details className="mt-2 text-xs text-surface-600">
               <summary className="cursor-pointer font-medium text-brand-700">
                 More photo tips
               </summary>
               <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
+                <li>Move a few steps between views; don’t only turn in one spot. Include floor and two adjoining walls where possible.</li>
                 <li>Use the normal 1× camera; avoid panoramas and ultra-wide shots.</li>
                 <li>Keep the phone level from side to side and avoid steep up/down angles.</li>
                 <li>Use good lighting and hold steady so floor and wall edges stay clear.</li>
                 <li>Measure a visible floor length, such as across a few tiles, to calibrate scale.</li>
               </ul>
               <p className="mt-2 leading-relaxed">
-                Better visibility helps the estimate. Hidden walls and exact
-                dimensions still need your review.
+                Blurry or difficult views stay available as references. You can continue with the photos you have; hidden walls and exact dimensions still need review.
               </p>
             </details>
           </section>
@@ -291,17 +261,16 @@ export function PhotoUploadDialog({
             onClick={() => fileInputRef.current?.click()}
             onDrop={(e) => {
               e.preventDefault();
-              const file = e.dataTransfer.files[0];
-              if (file) handleFile(file);
+              void handleFiles(Array.from(e.dataTransfer.files));
             }}
             onDragOver={(e) => e.preventDefault()}
           >
             <Camera className="w-10 h-10 text-surface-400 mx-auto mb-3" />
             <p className="text-sm font-medium mb-1">
-              Drop a photo here or click to browse
+              Choose room photos
             </p>
             <p className="text-xs text-surface-500">
-              JPG, PNG, WebP · Up to 8 MB and 20 MP
+              1–5 photos · JPG, PNG, WebP · Up to 8 MB and 20 MP each
             </p>
           </button>
 
@@ -352,7 +321,7 @@ export function PhotoUploadDialog({
               : analysisMessage}
           </p>
           {currentPhoto && project && !isSample && !analyzing && (
-            <RoomReconstructionReview key={currentPhoto.id} photo={currentPhoto} projectId={project.id} disabled={analyzing} onDone={onClose} />
+            <RoomReconstructionReview key={currentPhoto.id} photo={currentPhoto} projectId={project.id} disabled={analyzing} onDone={onClose} onAnchorChange={(id) => { setPhotoId(id); setPreview(project.photos.find((p) => p.id === id)?.uri ?? null); }} />
           )}
           {isSample && detections.length > 0 && (
             <div>
@@ -424,7 +393,7 @@ export function PhotoUploadDialog({
                 setAnalysisMessage('');
               }}
             >
-              Choose another photo
+              Use different photos
             </button>
           </div>
         </div>
@@ -433,12 +402,13 @@ export function PhotoUploadDialog({
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         accept="image/jpeg,image/png,image/webp"
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
+          const files = Array.from(e.target.files ?? []);
           e.target.value = '';
-          if (file) handleFile(file);
+          void handleFiles(files);
         }}
       />
     </Dialog>

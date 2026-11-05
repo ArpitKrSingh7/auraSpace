@@ -64,6 +64,7 @@ class AnalyzeRequest(BaseModel):
     image: str = Field(..., min_length=1, max_length=17_000_000, description="Base64-encoded image (data URI or raw base64)")
     include_depth: bool = Field(False, description="Whether to include depth estimation")
     include_room: bool = Field(False, description="Whether to include room geometry estimation")
+    include_artifacts: bool = Field(True, description="Include mask PNGs and cutout thumbnails; disable for compact web drafts")
     intrinsics: Optional[CameraIntrinsics] = Field(
         None, description="Optional calibrated fx, fy, cx, cy in oriented source-image pixels; otherwise a 60 degree horizontal field of view is assumed",
     )
@@ -81,6 +82,22 @@ class AnalyzeResponse(BaseModel):
     room_proposal: Optional[dict[str, Any]] = None
     warnings: list[str] = Field(default_factory=list)
     model_versions: dict[str, str] = Field(default_factory=dict)
+
+
+class RoomCapture(BaseModel):
+    id: str = Field(..., min_length=1, max_length=128, pattern=r'^[a-zA-Z0-9_.:-]+$')
+    image: str = Field(..., min_length=1, max_length=3_500_000)
+
+
+class ReconstructRequest(BaseModel):
+    photos: list[RoomCapture] = Field(..., min_length=1, max_length=5)
+
+    @field_validator('photos')
+    @classmethod
+    def unique_captures(cls, photos):
+        if len({p.id for p in photos}) != len(photos) or sum(len(p.image) for p in photos) > 3_500_000:
+            raise ValueError('Use unique photo IDs and a combined image payload below 3.5 MB')
+        return photos
 
 
 # ── /process ───────────────────────────────────────────────────────────────

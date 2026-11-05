@@ -43,6 +43,7 @@ from app.config import (
     DETECTION_SCORE_THRESHOLD,
     FURNITURE_CLASS_IDS,
     MAX_DETECTIONS,
+    MAX_IMAGE_DIM,
     NMS_IOU_THRESHOLD,
 )
 from app.schemas import BoundingBox, Detection
@@ -167,7 +168,7 @@ def _mask_to_polygon(mask: np.ndarray, simplify_epsilon: float = 2.0) -> list[li
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def detect_furniture(image: np.ndarray) -> list[Detection]:
+def detect_furniture(image: np.ndarray, *, include_artifacts: bool = True) -> list[Detection]:
     """Run Mask R-CNN inference and return furniture detections.
 
     **Computer Vision pipeline:**
@@ -192,7 +193,7 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
 
     # ── 1. Pre-process ─────────────────────────────────────────────────
     source_h, source_w = image.shape[:2]
-    scale = min(1.0, 1024 / max(source_h, source_w))
+    scale = min(1.0, MAX_IMAGE_DIM / max(source_h, source_w))
     analysis = cv2.resize(image, (max(1, round(source_w*scale)), max(1, round(source_h*scale)))) if scale < 1 else image
     sx, sy = source_w / analysis.shape[1], source_h / analysis.shape[0]
     rgb = cv2.cvtColor(analysis, cv2.COLOR_BGR2RGB)
@@ -200,7 +201,10 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
 
     # ── 2. Inference ───────────────────────────────────────────────────
     t0 = time.perf_counter()
-    outputs = model([tensor])[0]
+    # FastAPI sync routes can run concurrently. Bound activation memory as well
+    # as singleton loading; depth and LaMa also serialize their forward passes.
+    with _model_lock:
+        outputs = model([tensor])[0]
     logger.debug("Mask R-CNN inference: %.0f ms", (time.perf_counter() - t0) * 1000)
 
     boxes: torch.Tensor = outputs["boxes"]       # (N, 4)
@@ -209,10 +213,8 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
     masks: torch.Tensor = outputs["masks"]       # (N, 1, H, W)
 
     # ── 3. Filter by furniture class IDs & score ───────────────────────
-    keep_mask = torch.zeros(len(labels), dtype=torch.bool, device=labels.device)
-    for idx, (lbl, sc) in enumerate(zip(labels, scores)):
-        if int(lbl.item()) in FURNITURE_CLASS_IDS and sc.item() >= DETECTION_SCORE_THRESHOLD:
-            keep_mask[idx] = True
+    categories = torch.tensor(sorted(FURNITURE_CLASS_IDS), device=labels.device)
+    keep_mask = torch.isin(labels, categories) & (scores >= DETECTION_SCORE_THRESHOLD)
 
     if not keep_mask.any():
         logger.info("No furniture detected above threshold %.2f", DETECTION_SCORE_THRESHOLD)
@@ -253,7 +255,7 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
             binary_mask = cv2.resize(binary_mask, (source_w, source_h), interpolation=cv2.INTER_NEAREST)
         if duplicate_mask(binary_mask, label_name, float(scores[i]), accepted_masks):
             continue
-        features = mask_features(image, binary_mask)
+        features = mask_features(image, binary_mask, include_thumbnail=include_artifacts)
         if features is None:
             continue
         accepted_masks.append((cv2.resize(binary_mask, (128, 128), interpolation=cv2.INTER_NEAREST) > 0,
@@ -261,9 +263,10 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
         polygon = _mask_to_polygon(features['cleaned_mask'])
         area = float(np.sum(features['cleaned_mask'] > 0))
         thumbnail = features['thumbnail']
-        th, tw = thumbnail.shape[:2]
-        if max(th, tw) > 512:
-            thumbnail = cv2.resize(thumbnail, (max(1, round(tw*512/max(th,tw))), max(1, round(th*512/max(th,tw)))))
+        if thumbnail is not None:
+            th, tw = thumbnail.shape[:2]
+            if max(th, tw) > 512:
+                thumbnail = cv2.resize(thumbnail, (max(1, round(tw*512/max(th,tw))), max(1, round(th*512/max(th,tw)))))
         x1, y1, x2, y2 = boxes[i].tolist()
         x1, x2, y1, y2 = x1*sx, x2*sx, y1*sy, y2*sy
         detections.append(
@@ -274,9 +277,9 @@ def detect_furniture(image: np.ndarray) -> list[Detection]:
                 box=BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2),
                 mask_polygon=polygon,
                 area=area,
-                mask_uri=encode_image(features['cleaned_mask'], fmt='png'),
-                raw_mask_uri=encode_image(features['raw_mask'], fmt='png'),
-                thumbnail_uri=encode_image(thumbnail, fmt='png'),
+                mask_uri=encode_image(features['cleaned_mask'], fmt='png') if include_artifacts else None,
+                raw_mask_uri=encode_image(features['raw_mask'], fmt='png') if include_artifacts else None,
+                thumbnail_uri=encode_image(thumbnail, fmt='png') if include_artifacts else None,
                 color=features['color'], centroid=features['centroid'],
             )
         )

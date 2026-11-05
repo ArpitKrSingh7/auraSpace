@@ -1,8 +1,12 @@
 # AuraSpace: website implementation plan
 
-Updated 30 October 2026. The active product is an intelligent website for 2D/3D
+Updated 5 November 2026. The active product is an intelligent website for 2D/3D
 room planning and furniture visualization. The mobile prototype is deferred to
 `.depreciated/mobile`; there is no active Expo or APK requirement.
+
+The implementation audit is in [AUDIT.md](AUDIT.md). Features below describe
+the intended product unless explicitly marked as implemented. Backend/domain
+support alone does not mean that a feature is available in the active website.
 
 ## Problem and user flow
 
@@ -11,7 +15,8 @@ a user enter room measurements or upload a photo, review approximate structure
 and detected furniture, then arrange editable assets before moving real items.
 
 1. Create/open a browser-local room or explore a sample.
-2. Enter room dimensions, or upload an original room photograph.
+2. Enter room dimensions, or upload 1–5 room photographs; recommend overlapping
+   views without imposing a minimum photo count or a quality rejection gate.
 3. Review numbered furniture boxes and a partial floor/wall draft. Correct
    missed/wrong detections and enter room width/length in feet or metres.
 4. Open a populated draft with reviewed detections automatically placed.
@@ -61,7 +66,12 @@ furniture, fit a plausible floor using bounded RANSAC, fit supported vertical
 walls, align a rectangular Manhattan-room draft and derive its floor
 homography. Mark observed wall edges separately from visibility limits.
 
-A two-point measured floor reference calibrates scale. Existing measurements
+A two-point measured floor reference calibrates scale in the shared domain
+operation; the active furnished-draft screen does **not** expose that operation
+yet. Its width/length inputs currently fit the visible extent to the requested
+room size, which can distort item sizes when boundaries are hidden. Wire floor
+reference calibration into that flow and separate room editing from object
+scale before treating this as calibrated reconstruction. Existing measurements
 win unless replacement is explicitly requested. One known length does not
 recover hidden boundaries or correct every lens/shape error. The current
 fitter omits height and automatic opening proposals when unsupported.
@@ -95,26 +105,34 @@ existing vision evaluation scripts/reports.
 
 ## Current implementation and remaining work
 
-The editor, expanded household library, image-processing tools, learned-model
-adapters, reviewed partial room fitter, scale calibration and deployment
-configuration are implemented. Door/window controls are accessible from the
-scene and toolbar; geometry settings remain available in Room settings.
+The editor, expanded household library, browser grayscale/contrast/Sobel tools,
+learned-model adapters, partial room fitter and deployment configuration are
+implemented. Floor-reference calibration and reviewed masks have shared/backend
+implementations but are not connected to the active furnished-draft screen.
+CLAHE, contours and histograms have Python endpoints but no active web controls.
+Door/window controls are accessible from the scene and toolbar; geometry
+settings remain available in Room settings. Real-room accuracy is unmeasured.
 
 Next priorities:
 
-1. Extend the successful deployed detector/depth/removal synthetic smoke checks
+1. Complete the missing review workflow before expanding model scope: floor
+   reference calibration, dimension provenance, visible/unknown boundary
+   review, label correction and selected removal masks. Separate measured room
+   boundaries from the visible floor extent. Add the missing image-tool controls.
+2. Extend the successful deployed detector/depth/removal synthetic smoke checks
    to real captures, cold starts, memory, errors and retries. Exercise
    interactions on desktop and phone web.
-2. Compare room drafts with independent measured rooms. Report errors, failure
+3. Compare room drafts with independent measured rooms. Report errors, failure
    cases and correction effort before claiming reconstruction accuracy.
-3. Improve supported wall/corner recovery and add reviewed opening detection,
+4. Improve supported wall/corner recovery and add reviewed opening detection,
    ceiling/height recovery and irregular-room proposals where evidence permits.
-4. Add multi-photo alignment/fusion only with recoverable camera poses and
-   sufficient overlap; unrelated depth maps cannot simply be averaged.
-5. If required, connect the website to the optional account/cloud-job backend
+5. Evaluate the experimental multi-photo registration on independent measured
+   rooms, improve overlap/matching and quantify duplicate/position errors.
+   Unrelated depth maps must never be averaged to invent room dimensions.
+6. If required, connect the website to the optional account/cloud-job backend
    and implement conflict-aware project restore. Browser-local rooms do not
    become cloud-synced merely by deploying those services.
-6. Finish the evaluation report, demonstration and presentation against actual
+7. Finish the evaluation report, demonstration and presentation against actual
    implementation evidence. Mobile remains deferred until explicitly resumed.
 
 ## Verification and deployment
@@ -142,4 +160,53 @@ boxes, missing-item annotation, optional room width/length, estimated item sizes
 and one Build my room action that opens the pre-arranged draft.
 Measured dimensions and unrelated/locked furniture are preserved. Model recall
 uses reviewable lower-confidence candidates and mask-based duplicate rejection.
-Multi-photo pose alignment/fusion and automatic openings remain separate work.
+Automatic openings remain separate work.
+
+Rebuilding replaces unprotected suggestions only within the current photo group.
+Furniture from other groups, manual observations, measured items and locked
+items survives. Separate unregistered groups may describe the same physical
+object; the user must resolve those duplicates. User moves of an unlocked
+model suggestion within the group can still be replaced on rebuild.
+
+## Forgiving multi-photo implementation
+
+Users can upload 1–5 photos in one selection. Recommend 3–5 overlapping views
+from different positions, normal 1× camera, visible floor and some shared
+furniture. A real measurement remains optional and strongly improves scale.
+Readable difficult photos are retained; sharpness/light feedback is advisory.
+
+The new compact batch endpoint reuses the existing detector and depth model
+sequentially, with bounded resolution/payload and a scheduling time budget.
+The budget is checked between operations; it cannot interrupt a running model
+or matcher and is not a hard processing deadline. It chooses
+the best supported starting view. OpenCV RootSIFT mutual matches, epipolar
+filtering, depth backprojection and robust Sim(3) fitting estimate relative
+camera frames. Minimum support, spatial spread, depth residual, reprojection,
+scale and independently available floor-plane checks guard fusion. Connected
+views can share the starting floor, allowing projection of furniture from a
+photo that could not fit its own floor. Observed floor extents are transformed,
+not averaged; boundaries remain uncertain. Same-category spatial duplicates
+are merged only after alignment, with at most one observation from each photo
+per merged item. Close identical items across photos can still be confused.
+
+Each photo retains its own detections and pixel coordinates. The proposal
+references source photos for shared world poses. A gallery labels the starting,
+aligned and reference views. Reference observations are optional and start
+unchecked. Users can mark missing items in any view. Building remains one
+undoable action. Aligned poses keep their observed arrangement, with containment
+adjustments and visible overlap warnings; the single-view fallback retains the
+existing fit/packing behavior. JSON export, copying and photo removal preserve
+or detach source references.
+
+Time-limited/unmatched views remain references. If alignment fails, the best
+single-view furnished draft remains usable. This is sparse, depth-assisted
+registration, not dense photogrammetry, bundle adjustment, texture reconstruction
+or a guaranteed scan. No additional learned model weights were introduced.
+
+Validation includes an independently rendered textured room with known camera
+movement, noisy/outlier transform recovery, shared-floor furniture projection,
+duplicate handling, dark/corrupt/unrelated views, time-budget fallback, source
+coordinate scaling and build/undo/export behavior. In a cached-inference replay
+of the supplied two real views, alignment was unsupported: the doorway view
+remained the four-item starting draft and the other photo stayed a reference.
+This result does not establish a 60–75% real-room accuracy rate.

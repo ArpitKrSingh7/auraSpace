@@ -3,6 +3,7 @@ import {
   applyPixelOperation,
   approximateSurfaceFill,
   clampBox,
+  compositeRemovalPixels,
   furnitureType,
   MAX_IMAGE_PIXELS,
   parseDetections,
@@ -12,6 +13,7 @@ import {
 import type { ImageOperation, Progress } from './vision-core';
 import { mapRoomProposalToSource } from './reconstruction-core';
 import type { RoomReconstructionProposal } from '../../packages/scene-domain/src/index';
+import { parseRoomViewsResponse } from './multi-photo-core';
 export { VisionError } from './vision-core';
 
 const endpoint = process.env.NEXT_PUBLIC_VISION_API_URL
@@ -35,6 +37,17 @@ let inferenceTail: Promise<unknown> = Promise.resolve();
 
 export const modelStatus =
   'On-device COCO-SSD detection. Dimensions are editable estimates.';
+
+async function serviceEndpoint(): Promise<string | undefined> {
+  if (endpoint) return endpoint;
+  // Server-only configuration is sufficient; do not require a public backend URL.
+  try {
+    const response = await fetch('/api/health', { signal: AbortSignal.timeout(12_000) });
+    const health = await response.json();
+    if (health.services?.vision === 'connected') return '/api/vision';
+  } catch { /* Local image tools remain available. */ }
+  return undefined;
+}
 
 async function canvasFor(
   photo: Photo,
@@ -104,23 +117,12 @@ export async function analyzePhoto(
   browserOnly = false,
 ): Promise<Detection[]> {
   const canvas = await canvasFor(photo, 1280);
-  let serviceEndpoint = browserOnly ? undefined : endpoint;
-  if (!serviceEndpoint && !browserOnly) {
-    try {
-      const res = await fetch('/api/health', {
-        signal: AbortSignal.timeout(12_000),
-      });
-      const health = await res.json();
-      if (health.services?.vision === 'connected')
-        serviceEndpoint = '/api/vision';
-    } catch {
-      /* Local detector remains available. */
-    }
-  }
-  if (serviceEndpoint) {
+  const service = browserOnly ? undefined : await serviceEndpoint();
+  if (service) {
     onProgress?.('Analyzing furniture…');
-    const result = await postVision(serviceEndpoint, 'analyze', {
+    const result = await postVision(service, 'analyze', {
       image: canvas.toDataURL('image/jpeg', 0.84),
+      include_artifacts: false,
     });
     return parseDetections(result.detections, canvas.width, canvas.height).map(
       (d) => ({
@@ -194,6 +196,7 @@ export async function analyzeRoomScene(photo: Photo, onProgress?: Progress): Pro
     // consumed here and can exceed the hosted proxy's response-size budget.
     include_depth: false,
     include_room: true,
+    include_artifacts: false,
   }); } catch (error) {
     if (!(error instanceof VisionError) || !['service-unavailable', 'network'].includes(error.code)) throw error;
     onProgress?.('Room depth is unavailable. Finding furniture on your device…');
@@ -210,6 +213,47 @@ export async function analyzeRoomScene(photo: Photo, onProgress?: Progress): Pro
     return { detections, roomProposal: mapRoomProposalToSource(result.room_proposal, canvas, photo) };
   } catch {
     throw new VisionError('The service did not return a usable room proposal. Check its version or try another view.');
+  }
+}
+
+/** A single bounded batch; optional alignment never blocks a best-view draft. */
+export async function analyzeRoomViews(photos: Photo[], onProgress?: Progress) {
+  if (!photos.length || photos.length > 5) throw new VisionError('Choose between one and five photos.');
+  if (photos.length === 1) {
+    const result = await analyzeRoomScene(photos[0], onProgress);
+    return { anchorPhotoId: photos[0].id, roomProposal: result.roomProposal,
+      updates: [{ photoId: photos[0].id, detections: result.detections, analyzed: true }] };
+  }
+  onProgress?.(`Finding furniture across ${photos.length} photos. This usually takes a minute or two…`);
+  let maxSide = 1280, quality = .82;
+  let payload: { id: string; image: string }[] = [];
+  for (let attempt = 0; attempt < 4; attempt++) {
+    payload = [];
+    for (const photo of photos) {
+      const canvas = await canvasFor(photo, maxSide);
+      payload.push({ id: photo.id, image: canvas.toDataURL('image/jpeg', quality) });
+    }
+    if (JSON.stringify({ photos: payload }).length < 3_400_000) break;
+    maxSide = Math.round(maxSide * .8); quality -= .08;
+  }
+  try {
+    const raw = await postVision('/api/vision', 'reconstruct', { photos: payload });
+    return parseRoomViewsResponse(raw, photos);
+  } catch {
+    onProgress?.('Multi-photo analysis is unavailable. Building from one photo; keeping the others as references…');
+    // Keep the upload usable on older/offline deployments too.
+    for (const photo of photos) {
+      try {
+        const result = await analyzeRoomScene(photo, onProgress);
+        const roomProposal: RoomReconstructionProposal = { ...result.roomProposal,
+          multiView: { anchorPhotoId: photo.id, views: photos.map((p) => ({ photoId: p.id,
+            status: p.id === photo.id ? 'anchor' as const : 'reference' as const,
+            message: p.id === photo.id ? 'Starting view for your draft.' : 'Kept as a reference; multi-photo analysis was unavailable.' })) } };
+        return { anchorPhotoId: photo.id, roomProposal,
+          updates: photos.map((p) => ({ photoId: p.id, detections: p.id === photo.id ? result.detections : p.detections, analyzed: p.id === photo.id })) };
+      } catch { /* A broken view must not discard the other photos. */ }
+    }
+    throw new VisionError('Analysis could not finish. Your photos are saved; mark furniture to continue.');
   }
 }
 
@@ -244,19 +288,31 @@ export async function removeFurniture(
     (d.box[2] * canvas.width) / photo.width,
     (d.box[3] * canvas.height) / photo.height,
   ]);
-  if (endpoint) {
+  const service = await serviceEndpoint();
+  if (service) {
     onProgress?.('Preparing an approximate empty-room preview…');
-    const result = await postVision(endpoint, 'inpaint', {
+    const result = await postVision(service, 'inpaint', {
       image: canvas.toDataURL('image/jpeg', 0.88),
       boxes,
     });
     if (
       typeof result.uri !== 'string' ||
-      !/^data:image\/(png|jpeg);base64,/.test(result.uri)
+      !/^data:image\/(png|jpeg);base64,/.test(result.uri) ||
+      typeof result.mask_uri !== 'string' || !/^data:image\/png;base64,/.test(result.mask_uri)
     )
       throw new VisionError('The image service returned an invalid preview.');
+    const generated = await canvasFor({ ...photo, uri: result.uri });
+    const mask = await canvasFor({ ...photo, uri: result.mask_uri });
+    if ([generated, mask].some((c) => c.width !== canvas.width || c.height !== canvas.height))
+      throw new VisionError('The removal preview has different image coordinates. Retry with the original photo.', 'bad-response');
+    const context = canvas.getContext('2d')!;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    pixels.data.set(compositeRemovalPixels(pixels.data,
+      generated.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data,
+      mask.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data));
+    context.putImageData(pixels, 0, 0);
     return {
-      uri: result.uri,
+      uri: canvas.toDataURL('image/png'),
       method:
         typeof result.method === 'string'
           ? result.method
@@ -275,7 +331,7 @@ export async function removeFurniture(
   );
   context.putImageData(pixels, 0, 0);
   return {
-    uri: canvas.toDataURL('image/jpeg', 0.9),
+    uri: canvas.toDataURL('image/png'),
     method: 'Approximate surface fill',
   };
 }

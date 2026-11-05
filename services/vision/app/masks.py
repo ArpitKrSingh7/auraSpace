@@ -44,7 +44,7 @@ def reviewed_mask(shape, selections):
     return union
 
 
-def mask_features(image,raw_mask):
+def mask_features(image,raw_mask,include_thumbnail=True):
     """Conservative cleanup, separate raw/clean masks, contour evidence and cutout."""
     mask=(raw_mask>127).astype(np.uint8)*255
     # One small closing fills pinholes without joining separate furniture instances.
@@ -55,8 +55,10 @@ def mask_features(image,raw_mask):
     if not len(xs):
         return None
     x0,y0,x1,y1=int(xs.min()),int(ys.min()),int(xs.max()+1),int(ys.max()+1)
-    cutout=cv2.cvtColor(image[y0:y1,x0:x1],cv2.COLOR_BGR2BGRA)
-    cutout[:,:,3]=cleaned[y0:y1,x0:x1]
+    cutout=None
+    if include_thumbnail:
+        cutout=cv2.cvtColor(image[y0:y1,x0:x1],cv2.COLOR_BGR2BGRA)
+        cutout[:,:,3]=cleaned[y0:y1,x0:x1]
     masked=image[cleaned>0]
     bgr=np.median(masked,axis=0).astype(int)
     color=f'#{bgr[2]:02x}{bgr[1]:02x}{bgr[0]:02x}'

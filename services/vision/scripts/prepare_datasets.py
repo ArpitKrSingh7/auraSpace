@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-FURNITURE_CATEGORIES = {62: 'chair', 63: 'couch', 64: 'potted plant', 65: 'bed', 67: 'dining table'}
+FURNITURE_CATEGORIES = {62: 'chair', 63: 'couch', 64: 'potted plant', 65: 'bed', 67: 'dining table', 82: 'refrigerator'}
 
 
 def prepare_subset(source, limit=500):

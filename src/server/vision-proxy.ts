@@ -6,10 +6,14 @@ const image = z
   .max(3_500_000)
   .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\r\n]+$/);
 const schemas = {
+  reconstruct: z.object({
+    photos: z.array(z.object({ id: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/), image })).min(1).max(5),
+  }).refine(({ photos }) => new Set(photos.map((p) => p.id)).size === photos.length),
   analyze: z.object({
     image,
     include_depth: z.boolean().optional(),
     include_room: z.boolean().optional(),
+    include_artifacts: z.boolean().optional(),
     intrinsics: z.object({
       fx: z.number().finite().positive().max(1_000_000),
       fy: z.number().finite().positive().max(1_000_000),

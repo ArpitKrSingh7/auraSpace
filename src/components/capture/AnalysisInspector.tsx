@@ -146,6 +146,7 @@ export function AnalysisInspector({
   const [processedUri, setProcessedUri] = useState<string | null>(null);
   const [sliderPos, setSliderPos] = useState(50);
   const [processingError, setProcessingError] = useState('');
+  const [removalMethod, setRemovalMethod] = useState('');
   const previewCallback = useRef(onInpaintPreview);
   previewCallback.current = onInpaintPreview;
 
@@ -157,6 +158,7 @@ export function AnalysisInspector({
     let cancelled = false;
     setProcessedUri(null);
     setProcessingError('');
+    setRemovalMethod('');
     if (ipOperation === 'original') return;
     const input: Photo = photo ?? {
       id: 'illustration',
@@ -169,12 +171,13 @@ export function AnalysisInspector({
     };
     (async () => {
       try {
-        const uri =
-          ipOperation === 'inpainted'
-            ? (await removeFurniture(input, input.detections)).uri
-            : await processPhoto(input, ipOperation);
+        const result = ipOperation === 'inpainted'
+          ? await removeFurniture(input, input.detections)
+          : { uri: await processPhoto(input, ipOperation), method: '' };
+        const { uri } = result;
         if (cancelled) return;
         setProcessedUri(uri);
+        setRemovalMethod(result.method);
         if (ipOperation === 'inpainted' && photo)
           previewCallback.current?.(uri);
       } catch (error) {
@@ -246,6 +249,9 @@ export function AnalysisInspector({
               {processingError}
             </p>
           )}
+          {removalMethod && <p role="status" className="rounded-xl bg-surface-50 p-3 text-xs text-surface-600">
+            Removal method: {removalMethod}. Hidden surfaces are synthesized; use the source photo and measurements for room geometry.
+          </p>}
           {activeTab === 'ip' && (
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -254,7 +260,7 @@ export function AnalysisInspector({
                     Classical Pixel & Filter Pipelines
                   </h3>
                   <p className="text-xs text-surface-500">
-                    Direct mathematical operations on RGB/HSV pixel tensors
+                    Inspect pixel intensities, contrast and image gradients
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-1.5 bg-surface-100 p-1 rounded-xl">
@@ -344,8 +350,8 @@ export function AnalysisInspector({
                   </span>
                   <p className="text-surface-600">
                     Dual 3×3 Sobel masks (Gx, Gy) compute orthogonal discrete
-                    derivatives. Magnitude |∇I| = √(Gx² + Gy²) isolates wall
-                    boundaries.
+                    derivatives. Magnitude |∇I| = √(Gx² + Gy²) highlights
+                    intensity changes, including texture and object edges.
                   </p>
                 </div>
                 <div className="card p-4 space-y-1.5">
@@ -449,10 +455,11 @@ export function AnalysisInspector({
                       Monocular Depth Estimation
                     </h4>
                     <p className="text-surface-600">
-                      The optional Python service provides relative MiDaS depth,
-                      not metric measurements. The browser detector does not
-                      estimate depth. Use measured dimensions when accurate fit
-                      matters.
+                      The Python service uses Depth Anything V2 indoor metric
+                      depth to estimate a partial floor and supported walls.
+                      Camera calibration is normally assumed, so these estimates
+                      still need measured dimensions. The browser detector does
+                      not estimate depth.
                     </p>
                   </div>
                 </div>
@@ -489,7 +496,7 @@ projB = dot(cornersB, axis)
 if (max(projA) <= min(projB)) return false`}
                   </pre>
                   <p className="text-[11px] text-emerald-600 font-medium">
-                    ✓ Exact collision detection for arbitrary yaw θ.
+                    Rotated bounding-footprint checks; detailed mesh contact is approximate.
                   </p>
                 </div>
 
@@ -545,7 +552,7 @@ hit = ray.intersectPlane(floorPlane)`}
                     Algorithm
                   </div>
                   <span className="text-[10px] text-surface-400 font-mono">
-                    PLAN.md §13 Standard
+                    Integer rasterization example
                   </span>
                 </div>
                 <p className="text-xs text-surface-600">

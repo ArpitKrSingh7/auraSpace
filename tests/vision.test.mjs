@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   applyPixelOperation,
   approximateSurfaceFill,
+  compositeRemovalPixels,
   parseDetections,
 } from '../src/services/vision-core.ts';
 import { exportPlanSvg } from '../src/domain/export.ts';
@@ -51,6 +52,16 @@ test('surface fill preserves every unselected pixel and rejects a full mask', ()
       );
   assert.equal(result[48], 150);
   assert.throws(() => approximateSurfaceFill(source, 5, 5, [[0, 0, 5, 5]]));
+});
+
+test('removal composition restores source pixels outside the service mask after lossy transport', () => {
+  const original = new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 180]);
+  const generated = new Uint8ClampedArray([11, 22, 33, 255, 90, 91, 92, 255, 77, 88, 99, 255]);
+  const mask = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255]);
+  const before = original.slice();
+  assert.deepEqual([...compositeRemovalPixels(original, generated, mask)], [10, 20, 30, 255, 90, 91, 92, 255, 70, 80, 90, 180]);
+  assert.deepEqual(original, before);
+  assert.throws(() => compositeRemovalPixels(original, generated.slice(4), mask), /match/);
 });
 
 test('plan exports escape names and include dimensions and rotated footprints', () => {

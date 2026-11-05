@@ -280,7 +280,7 @@ def detect_edges(image: np.ndarray, method: str = "canny") -> np.ndarray:
     else:
         # Gaussian blur to suppress noise before Canny
         blurred = cv2.GaussianBlur(gray, (5, 5), sigmaX=1.4)
-        # Automatic thresholding using Otsu's method on intensity statistics
+        # Median-intensity heuristic (not Otsu's thresholding algorithm).
         median_val = float(np.median(blurred))
         lo = int(max(0, 0.66 * median_val))
         hi = int(min(255, 1.33 * median_val))

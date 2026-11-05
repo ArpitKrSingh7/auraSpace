@@ -81,15 +81,27 @@ test('unchecked observations are excluded and reapplying does not duplicate phot
   assert.ok(!second.items.some((i) => i.type === 'table'));
 });
 
-test('switching to a different view replaces photo suggestions instead of duplicating the room', () => {
+test('building from an unrelated photo preserves previous photo furniture', () => {
   const p = fixture();
   const first = buildPhotoLayout(p, 'room-photo', { widthM: 3.05, depthM: 3.05 });
   const next = { ...p, room: first.room, items: first.items,
     photos: [...p.photos, { ...structuredClone(p.photos[0]), id: 'second-view' }] };
   const result = buildPhotoLayout(next, 'second-view');
+  assert.equal(result.items.length, 8);
+  for (const item of first.items) assert.deepEqual(result.items.find((i) => i.id === item.id), item);
+  assert.equal(result.added.length, 4);
+  assert.ok(result.added.every((item) => item.photoId === 'second-view'));
+});
+
+test('manually marked furniture survives rebuilding its capture group', () => {
+  const p = fixture();
+  p.photos[0].detections[3].source = 'manual';
+  const first = buildPhotoLayout(p, 'room-photo');
+  const manual = first.items.find((i) => i.detectionId === 'det-3');
+  manual.x = .7; manual.z = .8; manual.rotation = 27;
+  const result = buildPhotoLayout({ ...p, room: first.room, items: first.items }, 'room-photo');
   assert.equal(result.items.length, 4);
-  assert.ok(result.items.every((item) => item.photoId === 'second-view'));
-  assert.equal(result.items.filter((item) => item.type === 'bed').length, 2);
+  assert.deepEqual(result.items.find((i) => i.id === manual.id), manual);
 });
 
 test('unrelated items, locked edits and individually measured dimensions are preserved', () => {

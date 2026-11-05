@@ -289,11 +289,11 @@ def composite_result(
     np.ndarray
         Composited BGR image.
     """
-    if len(mask.shape) == 2:
-        alpha = (mask > 0).astype(np.float32)[:, :, np.newaxis]
-    else:
-        alpha = (mask[:, :, 0] > 0).astype(np.float32)[:, :, np.newaxis]
-
-    composited = (alpha * result.astype(np.float32)
-                  + (1.0 - alpha) * original.astype(np.float32))
-    return composited.astype(np.uint8)
+    if result.shape != original.shape or mask.shape[:2] != original.shape[:2]:
+        raise ValueError('Original, result and mask dimensions must match')
+    selected = mask > 0 if mask.ndim == 2 else mask[:, :, 0] > 0
+    composited = original.copy()
+    # Binary composition needs no float RGB copies or arithmetic temporaries.
+    # At 20 MP those temporaries used hundreds of MB for an exact pixel copy.
+    np.copyto(composited, result, where=selected[:, :, None])
+    return composited

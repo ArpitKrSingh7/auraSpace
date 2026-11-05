@@ -7,6 +7,11 @@ This reports matched-box precision/recall, not COCO mAP or depth accuracy.
 import argparse
 import json
 from pathlib import Path
+from collections import defaultdict
+if __package__:
+    from .prepare_datasets import FURNITURE_CATEGORIES
+else:
+    from prepare_datasets import FURNITURE_CATEGORIES
 
 
 def compute_box_iou(boxA, boxB):
@@ -21,14 +26,17 @@ def compute_box_iou(boxA, boxB):
 def evaluate_benchmarks(annotations=None, predictions=None, threshold=0.5):
     if annotations is None or predictions is None:
         return {"status": "not_evaluated", "metrics": None, "reason": "Provide real COCO annotations and saved model predictions. Previous hardcoded benchmark values were not measured and have been removed."}
-    furniture = {62, 63, 64, 65, 67}
+    furniture = FURNITURE_CATEGORIES
     image_ids = {image['id'] for image in annotations['images']}
     truth = [a for a in annotations['annotations'] if a['image_id'] in image_ids and a['category_id'] in furniture and not a.get('iscrowd')]
     guessed = sorted([p for p in predictions if p['image_id'] in image_ids and p['category_id'] in furniture], key=lambda p: p['score'], reverse=True)
     matched = set()
+    truth_by_category = defaultdict(list)
+    for i, actual in enumerate(truth):
+        truth_by_category[(actual['image_id'], actual['category_id'])].append((i, actual))
     true_positive = 0
     for prediction in guessed:
-        candidates = [(compute_box_iou(prediction['bbox'], actual['bbox']), i) for i, actual in enumerate(truth) if i not in matched and actual['image_id'] == prediction['image_id'] and actual['category_id'] == prediction['category_id']]
+        candidates = [(compute_box_iou(prediction['bbox'], actual['bbox']), i) for i, actual in truth_by_category[(prediction['image_id'], prediction['category_id'])] if i not in matched]
         best = max(candidates, default=(0, -1))
         if best[0] >= threshold:
             matched.add(best[1])

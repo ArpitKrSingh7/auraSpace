@@ -21,3 +21,20 @@ class TestEvaluation(unittest.TestCase):
         result = prepare_subset(source)
         self.assertEqual(result['images'], [{'id': 5}])
         self.assertEqual(result['licenses'], [{'id': 1}])
+
+    def test_refrigerators_are_evaluated_and_included_in_the_subset(self):
+        source = {'images': [{'id': 1}], 'annotations': [
+            {'image_id': 1, 'category_id': 82, 'bbox': [10, 10, 20, 20]}],
+            'categories': [{'id': 82}]}
+        predictions = [{**source['annotations'][0], 'score': .9}]
+        self.assertEqual(evaluate_benchmarks(source, predictions)['metrics']['true_positive'], 1)
+        self.assertEqual(prepare_subset(source)['images'], source['images'])
+
+    def test_matching_never_crosses_images_or_categories(self):
+        annotations = {'images': [{'id': 1}, {'id': 2}], 'annotations': [
+            {'image_id': 1, 'category_id': 62, 'bbox': [0, 0, 20, 20]}]}
+        predictions = [
+            {'image_id': 2, 'category_id': 62, 'bbox': [0, 0, 20, 20], 'score': .9},
+            {'image_id': 1, 'category_id': 82, 'bbox': [0, 0, 20, 20], 'score': .9}]
+        metrics = evaluate_benchmarks(annotations, predictions)['metrics']
+        self.assertEqual((metrics['true_positive'], metrics['false_positive'], metrics['false_negative']), (0, 2, 1))
