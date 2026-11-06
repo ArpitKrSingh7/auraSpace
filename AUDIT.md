@@ -137,8 +137,8 @@ reliability. “Partial” means the plan promises more than the active flow pro
 | Fit, overlap and clearance | Legacy geometry + scene-domain spatial logic | Rotated bounding-footprint/vertical checks and approximate clearance; not full mesh collision or accessibility certification |
 | Undo, alternatives, JSON/SVG/PNG | Store, validation, export | Implemented; photo build is one room/items undo step; photos/reanalysis are not restored by that history |
 | Durable persistence | Synchronous localStorage | Partial for multiple photos; quota failures warn, but edits are then memory-only |
-| Accounts, jobs and private storage | Optional API/worker/backend | Code exists separately; active browser editor is not cloud-synced |
-| Model provenance/deployment | Model manifest, startup, Docker/Vercel configs | Hash-pinned weights; deployment readiness still needs actual cold/concurrent inference checks |
+| Accounts and cloud sync | Browser-local projects and JSON export | Cloud accounts and sync are out of scope for the college project |
+| Model provenance/deployment | Model manifest, startup, Vercel configs | Hash-pinned weights; deployment readiness still needs actual cold/concurrent inference checks |
 | Evaluation | Synthetic tests, smoke reports, fixed-IoU script | Actual detection benchmark report is `not_evaluated`; no measured depth/room/layout accuracy report |
 
 ## Critical geometry and CV findings
@@ -296,7 +296,7 @@ actual removal method and labels synthesized surfaces.
 
 **Required:** explicit per-item removal selection, raw/clean mask overlays,
 paint/erase, fixed-object protection, mask expansion preview, undoable review,
-and consistent mask validation through proxy/Python/contracts. Python currently
+and consistent mask validation through proxy/Python schemas. Python currently
 accepts loosely typed mask dictionaries; malformed nested types and out-of-image
 coordinates need comprehensive HTTP 422 coverage. Bound mask complexity as well
 as image dimensions. Never reuse removal output as reconstruction evidence.
@@ -353,7 +353,7 @@ as a substitute for geometric validation.
    This evaluator remains fixed-IoU precision/recall, **not COCO mAP**; it does
    not implement standard COCO crowd/ignore semantics.
 9. Corrected stale MiDaS, contour-UI, multi-photo status and original-file claims
-   in UI/docs, and distinguished backend-only features in `PLAN.md`.
+   in UI/docs, and distinguished features outside the active website scope in `PLAN.md`.
 
 An isolated synthetic 1280×960, 25%-mask composition benchmark (10 repeats)
 produced identical pixels: median 18.18 → 6.90 ms and traced peak allocations
@@ -403,8 +403,8 @@ pixel preservation, not room accuracy. `evaluation_report.json` remains honestly
    controls. Compare alternative feature/depth/reconstruction approaches on the
    same held-out data before adopting additional models.
 5. Add reviewed openings/height and irregular rooms only when evidence and
-   validation support them. Dense textured reconstruction and cloud sync remain
-   separate product milestones.
+   validation support them. Dense textured reconstruction remains a separate
+   product milestone; browser-local persistence is the current project scope.
 
 ## Verification and limits
 
@@ -413,8 +413,8 @@ composition, invalid LaMa selections, same-photo and transitive duplicate
 handling, five-view pose limits, invalid-fusion fallback, capture-group
 preservation and refrigerator evaluation.
 
-Validated: 110 JavaScript tests, 75 Python tests, all workspace typechecks
-(web/API/worker), production build and Python-to-TypeScript reconstruction/calibration integration. The
+Validated: 110 JavaScript tests, 75 Python tests, web and shared-package
+typechecks, production build and Python-to-TypeScript reconstruction/calibration integration. The
 integration fixture recovered a calibrated visible extent of 5.20 × 4.39 m;
 that result describes an analytic fixture, not a scanned real room.
 
@@ -427,5 +427,4 @@ scripts/logs/screenshots for this run are under `/tmp/auraspace-audit-*`.
 
 No fresh real-room accuracy study, live learned-model benchmark, production
 deployment test or full browser/device matrix was performed in this audit.
-Optional cloud services were inspected but not started or exercised against a
-live database/storage provider. Those limitations remain explicit release work.
+Those limitations remain explicit release work.

@@ -39,13 +39,13 @@ boundaries remain uncertain; synthesized/inpainted pixels are not measurements.
 | Image processing | Python, OpenCV and NumPy |
 | Learned vision | Torch/Torchvision Mask R-CNN; pinned Depth Anything V2 indoor metric model |
 | Removal | Pinned Big-LaMa TorchScript model with labelled OpenCV fallback |
-| Hosting | Vercel web/private Python service, or Vercel web with Docker-hosted vision |
-| Optional later cloud layer | Existing TypeScript API/worker, PostgreSQL, Redis and private Supabase Storage |
+| Hosting | Vercel web and private Python vision service; an external vision URL can be configured if needed |
 
-The default website needs only Next.js and Python vision. The optional cloud
-layer is separate and is not required to demonstrate the three academic
-components. `.env` stays private; model files are downloaded and verified from
-`services/vision/model-manifest.json` rather than committed to Git.
+The website needs only Next.js and Python vision for photo analysis. Room
+projects remain in the browser and can be exported as JSON; account sync is out
+of scope for this college project. `.env` stays private; model files are
+downloaded and verified from `services/vision/model-manifest.json` rather than
+committed to Git.
 
 ## Image processing contribution
 
@@ -131,9 +131,8 @@ Next priorities:
 5. Evaluate the experimental multi-photo registration on independent measured
    rooms, improve overlap/matching and quantify duplicate/position errors.
    Unrelated depth maps must never be averaged to invent room dimensions.
-6. If required, connect the website to the optional account/cloud-job backend
-   and implement conflict-aware project restore. Browser-local rooms do not
-   become cloud-synced merely by deploying those services.
+6. Keep browser-local projects and JSON import/export as the current data scope.
+   Revisit accounts and cloud sync only if the product scope grows.
 7. Finish the evaluation report, demonstration and presentation against actual
    implementation evidence. Mobile remains deferred until explicitly resumed.
 

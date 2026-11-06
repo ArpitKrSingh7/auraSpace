@@ -88,7 +88,7 @@ AuraSpace combines three technical areas in one planning workflow:
 | Browser inference | TensorFlow.js and COCO-SSD |
 | Vision service | Python, FastAPI, NumPy, OpenCV, PyTorch, Torchvision, Transformers |
 | Pretrained models | Mask R-CNN ResNet50 FPN v2, Depth Anything V2 Metric Indoor Small, Big-LaMa |
-| Deployment | Vercel web/vision services, with a Docker-hosted backend option |
+| Deployment | Vercel web and private Python vision service |
 
 Model download sources, pinned revisions and SHA-256 hashes are recorded in
 [the model manifest](services/vision/model-manifest.json). The project uses
@@ -138,11 +138,10 @@ weights are prepared, start vision in a second terminal:
 bash scripts/vision-local.sh
 ```
 
-The standard website-to-vision flow needs only these two processes. The optional
-API, worker, PostgreSQL and Redis services are separate infrastructure.
+The website and Python vision service are the only runtime services. Manual
+room planning works without starting the vision service.
 
-For hosted environments, follow [DEPLOYMENT.md](DEPLOYMENT.md); a local backend
-address is only suitable for local development.
+For hosted environments, follow [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Project structure
 
@@ -151,12 +150,8 @@ app/                    Next.js pages, metadata and server API routes
 src/                    Web editor, scene, state and browser services
 packages/scene-domain/  Shared room geometry, validation and layout logic
 packages/scene-assets/  Procedural furniture models
-packages/contracts/     Shared API schemas
 services/vision/        Python image-processing and vision service
-apps/api/               Optional cloud API
-apps/worker/            Optional background processing worker
-packages/backend/      Shared cloud-backend utilities
-infra/                  Deployment and container configuration
+infra/                  Optional Vercel configuration for an external vision service
 scripts/                Setup, model provisioning and verification tools
 tests/                  JavaScript and scene-interaction tests
 .depreciated/mobile/    Archived Expo/Android prototype
@@ -216,7 +211,7 @@ localStorage saving remains available, with a visible warning on save failure.
 Original uploads are stored separately, byte-for-byte, and can be downloaded
 from photo review. Originals may contain camera/location metadata; that metadata
 is not used for reconstruction. CV coordinates refer to the normalized preview.
-Photos used for server-based AI analysis are sent to the backend for processing. The current
+Photos used for server-based AI analysis are sent to the Python vision service for processing. The current
 website does not automatically publish rooms or provide a central gallery of
 uploaded projects. Clearing browser data can remove saved work. Exported JSON
 projects include normalized photos and saved previews, so sharing a project file

@@ -42,9 +42,8 @@ Keep the web process running and start only vision in another terminal:
 bash scripts/vision-local.sh
 ```
 
-There is no need to start the API, worker, database, Redis, Expo or an emulator
-for this flow. Reuse existing services instead of starting duplicates. Stop a
-host process with Ctrl+C in its terminal.
+No Docker, Redis or database is required. Stop the vision process with Ctrl+C
+when finished.
 
 Upload 1–5 photos of the same room through Room from photo. One is enough;
 3–5 overlapping views from different positions give alignment more evidence.
@@ -76,9 +75,9 @@ are distinct; the fitter consumes raw metric values.
 
 ## Hosted website
 
-Follow [DEPLOYMENT.md](DEPLOYMENT.md) for the Vercel Services setup, Large
-Functions opt-in, pinned model provisioning and the optional complete Docker
-backend. For a custom site domain, set `NEXT_PUBLIC_SITE_URL` and redeploy.
+Follow [DEPLOYMENT.md](DEPLOYMENT.md) for the Vercel web and vision setup,
+pinned model provisioning and production checks. For a custom site domain, set
+`NEXT_PUBLIC_SITE_URL` and redeploy.
 
 The active project is website-first. Archived mobile source and restoration
 notes are in [.depreciated/README.md](.depreciated/README.md). APK installation,

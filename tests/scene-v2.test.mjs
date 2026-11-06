@@ -350,4 +350,4 @@ test('floor calibration rejects crossed and concave corner order', async () => {
   assert.ok(Math.abs(mapFloorPoint(result.value, [90, 10])[0] - 5) < 1e-8);
 });
 
-test('scene comparison survives PostgreSQL JSONB record key ordering',async()=>{const{canonicalJson}=await import('../packages/scene-domain/src/serialization.ts');const scene=createDocument().scene,reordered=JSON.parse(JSON.stringify(scene));reordered.dimensionEvidence={depth:scene.dimensionEvidence.depth,width:scene.dimensionEvidence.width};assert.equal(canonicalJson(scene),canonicalJson(reordered));reordered.height.meters+=.1;assert.notEqual(canonicalJson(scene),canonicalJson(reordered));});
+test('scene comparison survives reordered record keys',async()=>{const{canonicalJson}=await import('../packages/scene-domain/src/serialization.ts');const scene=createDocument().scene,reordered=JSON.parse(JSON.stringify(scene));reordered.dimensionEvidence={depth:scene.dimensionEvidence.depth,width:scene.dimensionEvidence.width};assert.equal(canonicalJson(scene),canonicalJson(reordered));reordered.height.meters+=.1;assert.notEqual(canonicalJson(scene),canonicalJson(reordered));});
