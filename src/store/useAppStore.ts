@@ -2,6 +2,10 @@
 
 import { create } from 'zustand';
 import { buildPhotoLayout, type PhotoLayoutOptions } from '../services/photo-layout';
+import { reconcileDetections, repairObservationReferences } from '../services/observation-identity';
+import { readStudio, writeStudio } from '../services/studio-storage';
+import { recoverStudio } from '../services/studio-recovery';
+import { placementPose, mountingPose, wallFromRotation, type PlacementAdjustment } from '../domain/placement';
 import {
   CATALOG,
   DEFAULT_SETTINGS,
@@ -29,7 +33,6 @@ import {
   validateItem,
   validateProject,
   validateRoom,
-  validateSettings,
 } from '../domain/validation';
 
 export interface Toast {
@@ -109,7 +112,7 @@ export interface AppState {
     color: string,
   ) => void;
   removeItem: (id: string) => void;
-  moveItem: (id: string, x: number, z: number) => void;
+  moveItem: (id: string, x: number, z: number, adjustment?: PlacementAdjustment) => void;
   rotateItem: (id: string, degrees: number) => void;
   resizeItem: (
     id: string,
@@ -129,7 +132,8 @@ export interface AppState {
   /* Placing mode */
   startPlacing: (type: FurnitureType) => void;
   setPlacing: (type: FurnitureType | null) => void;
-  confirmPlacing: (x: number, z: number) => void;
+  confirmPlacing: (x: number, z: number, adjustment?: PlacementAdjustment) => void;
+  setPlacementSurface: (surface: NonNullable<FurnitureItem['mounting']>) => void;
   cancelPlacing: () => void;
 
   /* Selection */
@@ -178,47 +182,23 @@ export interface AppState {
 
   /* Persistence */
   saveToStorage: () => void;
-  loadFromStorage: () => void;
+  loadFromStorage: () => Promise<void>;
+  storageError: string | null;
   initSamples: () => void;
 }
 
 const STORAGE_KEY = 'auraspace-studio';
 
-function getStoredState(): { projects?: Project[]; settings?: Settings } {
+function getStoredState(): { projects?: Project[]; settings?: Settings; skipped?: number } {
   if (typeof window === 'undefined') return {};
   try {
     const raw =
       localStorage.getItem(STORAGE_KEY) ||
       localStorage.getItem('morrow-room-studio');
     if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return {
-      projects: Array.isArray(parsed.projects)
-        ? parsed.projects.map(validateProject).map((p: Project) => ({
-            ...p,
-            photos: p.photos.map((ph) =>
-              ph.analysisStatus === 'running'
-                ? {
-                    ...ph,
-                    analysisStatus: 'failed' as const,
-                    analysisMessage:
-                      'Analysis was interrupted. Import the photo again to retry.',
-                  }
-                : ph,
-            ),
-          }))
-        : undefined,
-      settings: parsed.settings
-        ? validateSettings({
-            ...parsed.settings,
-            displayName:
-              parsed.settings.displayName?.trim() ||
-              DEFAULT_SETTINGS.displayName,
-          })
-        : undefined,
-    };
+    return recoverStudio(JSON.parse(raw));
   } catch {
-    return {};
+    return { skipped: 1 };
   }
 }
 
@@ -245,16 +225,15 @@ export const useAppStore = create<AppState>((set, get) => {
   };
 
   let pendingHistory: string | null = null;
-  let storageFailed = false;
+  let durableStorage = false;
+  let loading: Promise<void> | undefined;
+  const storageFailure = (error?: unknown) => set({ storageError: error instanceof Error && error.name === 'StudioConflictError'
+    ? error.message : 'Changes could not be saved on this device. Keep this tab open and export your room.' });
   const save = (projects: Project[], settings: Settings) => {
-    const ok = persistState(projects, settings);
-    if (!ok && !storageFailed)
-      get().addToast(
-        'Device storage is full or unavailable. Export your project to keep these changes.',
-        'error',
-      );
-    storageFailed = !ok;
-    return ok;
+    if (durableStorage) {
+      void writeStudio({ projects, settings }).then(() => set({ storageError: null }), storageFailure);
+    } else if (!persistState(projects, settings)) storageFailure();
+    else set({ storageError: null });
   };
 
   const updateActive = (updater: (project: Project) => Partial<Project>) => {
@@ -297,6 +276,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
   return {
     /* ── State ── */
+    storageError: null,
     projects: initialProjects,
     activeProjectId: initialProjects[0]?.id ?? null,
     viewMode: 'overview',
@@ -504,39 +484,31 @@ export const useAppStore = create<AppState>((set, get) => {
       }));
     },
 
-    moveItem: (id, x, z) => {
-      if (
-        ![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100) ||
-        getActive()?.items.find((i) => i.id === id)?.locked
-      )
-        return;
+    moveItem: (id, x, z, adjustment) => {
+      const project = getActive(), item = project?.items.find((i) => i.id === id);
+      if (!project || !item || item.locked || ![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100)) return;
+      let moved: FurnitureItem;
+      try {
+        const updated = validateItem({ ...item, ...adjustment });
+        moved = validateItem({ ...updated, ...placementPose(updated, project.room, x, z, get().snap && !adjustment, wallFromRotation(adjustment?.rotation)), placed: true, edited: true });
+      } catch { return; }
+      if (['x', 'z', 'rotation', 'elevationM', 'placed'].every((key) => moved[key as keyof FurnitureItem] === item[key as keyof FurnitureItem])) return;
       get().pushHistory('Move item');
-      const snap = get().snap;
-      updateActive((p) => ({
-        items: p.items.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                x: snapPosition(x, snap),
-                z: snapPosition(z, snap),
-                placed: true,
-              }
-            : item,
-        ),
-      }));
+      updateActive((p) => ({ items: p.items.map((current) => current.id === id ? moved : current) }));
     },
 
     rotateItem: (id, degrees) => {
       if (
         !Number.isFinite(degrees) ||
-        getActive()?.items.find((i) => i.id === id)?.locked
+        getActive()?.items.find((i) => i.id === id)?.locked ||
+        getActive()?.items.find((i) => i.id === id)?.mounting === 'wall'
       )
         return;
       get().pushHistory('Rotate item');
       updateActive((p) => ({
         items: p.items.map((item) =>
           item.id === id
-            ? { ...item, rotation: normalizeRotation(item.rotation + degrees) }
+            ? { ...item, rotation: normalizeRotation(item.rotation + degrees), edited: true }
             : item,
         ),
       }));
@@ -550,14 +522,15 @@ export const useAppStore = create<AppState>((set, get) => {
         getActive()?.items.find((i) => i.id === id)?.locked
       )
         return;
+      const project = getActive(), current = project?.items.find((item) => item.id === id);
+      if (!project || !current || (current.width === width && current.depth === depth && current.height === height)) return;
+      let resized: FurnitureItem;
+      try {
+        const next = { ...current, width, depth, height, source: 'measured' as const, edited: true };
+        resized = validateItem({ ...next, ...placementPose(next, project.room, current.x, current.z, get().snap, wallFromRotation(current.rotation)) });
+      } catch { return; }
       get().pushHistory('Resize item');
-      updateActive((p) => ({
-        items: p.items.map((item) =>
-          item.id === id
-            ? { ...item, width, depth, height, source: 'measured' as const }
-            : item,
-        ),
-      }));
+      updateActive((p) => ({ items: p.items.map((item) => item.id === id ? resized : item) }));
     },
 
     recolorItem: (id, color) => {
@@ -565,14 +538,14 @@ export const useAppStore = create<AppState>((set, get) => {
       get().pushHistory('Change color');
       updateActive((p) => ({
         items: p.items.map((item) =>
-          item.id === id ? { ...item, color } : item,
+          item.id === id ? { ...item, color, edited: true } : item,
         ),
       }));
     },
 
     updateItem: (id, updates) => {
       const item = getActive()?.items.find((i) => i.id === id);
-      if (!item) return;
+      if (!item || (item.mounting === 'wall' && 'rotation' in updates) || Object.entries(updates).every(([key, value]) => item[key as keyof FurnitureItem] === value)) return;
       if (
         item.locked &&
         ['x', 'z', 'rotation', 'width', 'depth', 'height', 'placed', 'mounting', 'elevationM'].some(
@@ -581,7 +554,10 @@ export const useAppStore = create<AppState>((set, get) => {
       )
         return;
       try {
-        updates = validateItem({ ...item, ...updates, id });
+        if (updates.mounting && updates.mounting !== item.mounting) {
+          updates = mountingPose({ ...item, ...updates }, getActive()!.room, updates.mounting, get().snap);
+        }
+        updates = validateItem({ ...item, ...updates, id, edited: true });
       } catch {
         return;
       }
@@ -624,6 +600,7 @@ export const useAppStore = create<AppState>((set, get) => {
         x: original.x + 0.3,
         z: original.z + 0.3,
         locked: false,
+        edited: true,
       };
       updateActive((p) => ({
         items: [...p.items, copy],
@@ -636,7 +613,7 @@ export const useAppStore = create<AppState>((set, get) => {
       get().pushHistory('Return to tray');
       updateActive((p) => ({
         items: p.items.map((item) =>
-          item.id === id ? { ...item, placed: false, x: 0, z: 0 } : item,
+          item.id === id ? { ...item, placed: false, x: 0, z: 0, edited: true } : item,
         ),
       }));
       set((s) => ({
@@ -645,27 +622,7 @@ export const useAppStore = create<AppState>((set, get) => {
       }));
     },
 
-    placeFromTray: (id, x, z) => {
-      if (
-        ![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100) ||
-        getActive()?.items.find((i) => i.id === id)?.locked
-      )
-        return;
-      get().pushHistory('Place from tray');
-      const snap = get().snap;
-      updateActive((p) => ({
-        items: p.items.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                placed: true,
-                x: snapPosition(x, snap),
-                z: snapPosition(z, snap),
-              }
-            : item,
-        ),
-      }));
-    },
+    placeFromTray: (id, x, z) => get().moveItem(id, x, z),
 
     placeItem: (x, z) => {
       const { placingType, placingItem } = get();
@@ -697,32 +654,25 @@ export const useAppStore = create<AppState>((set, get) => {
       }
     },
 
-    confirmPlacing: (x, z) => {
-      const placing = get().placingItem;
-      if (!placing) return;
+    setPlacementSurface: (surface) => {
+      const placing = get().placingItem, project = getActive();
+      if (!placing || !project || !['floor', 'wall', 'ceiling'].includes(surface)) return;
+      set({ placingItem: mountingPose(placing, project.room, surface, get().snap) });
+    },
+
+    confirmPlacing: (x, z, adjustment) => {
+      const placing = get().placingItem, project = getActive();
+      if (!placing || !project || placing.locked || project.items.find((i) => i.id === placing.id)?.locked) return;
+      if (![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100)) return;
+      let item: FurnitureItem;
+      try {
+        const updated = validateItem({ ...placing, ...adjustment });
+        item = validateItem({ ...updated, ...placementPose(updated, project.room, x, z, get().snap && !adjustment, wallFromRotation(adjustment?.rotation)), edited: true, placed: true });
+      } catch { return; }
       get().pushHistory('Place furniture');
-      if (![x, z].every((v) => Number.isFinite(v) && Math.abs(v) <= 100)) {
-        pendingHistory = null;
-        return;
-      }
-      const snap = get().snap;
-      const item: FurnitureItem = {
-        ...placing,
-        placed: true,
-        x: snapPosition(x, snap),
-        z: snapPosition(z, snap),
-      };
-      updateActive((p) => ({
-        items: p.items.some((i) => i.id === item.id)
-          ? p.items.map((i) => (i.id === item.id ? item : i))
-          : [...p.items, item],
-      }));
-      set({
-        placingItem: null,
-        placingType: null,
-        selectedItemId: item.id,
-        selectedId: item.id,
-      });
+      updateActive((p) => ({ items: p.items.some((i) => i.id === item.id)
+        ? p.items.map((i) => i.id === item.id ? item : i) : [...p.items, item] }));
+      set({ placingItem: null, placingType: null, selectedItemId: item.id, selectedId: item.id });
     },
 
     cancelPlacing: () => {
@@ -851,18 +801,27 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     updatePhotoInProject: (projectId, photoId, updates) => {
+      const previous = get().projects.find((p) => p.id === projectId)?.photos.find((p) => p.id === photoId);
+      if (!previous) return;
+      const analyzing = updates.analysisStatus === 'complete' && !!updates.detections;
+      const photo = { ...previous, ...updates,
+        ...(analyzing ? { detections: reconcileDetections(previous.detections, updates.detections!) } : {}) };
       const next = get().projects.map((p) =>
         p.id === projectId
           ? {
               ...p,
               updatedAt: new Date().toISOString(),
               photos: p.photos.map((ph) =>
-                ph.id === photoId ? { ...ph, ...updates } : ph,
+                ph.id === photoId ? photo : ph,
               ),
+              items: repairObservationReferences(p.items, photo),
+              layouts: p.layouts.map((layout) => ({ ...layout, items: repairObservationReferences(layout.items, photo) })),
             }
           : p,
       );
-      set({ projects: next });
+      set({ projects: next, ...(get().activeProjectId === projectId ? {
+        history: get().history.map((entry) => ({ ...entry, items: repairObservationReferences(entry.items, photo) })),
+      } : {}) });
       save(next, get().settings);
     },
 
@@ -915,7 +874,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!project) throw new Error('Open a room before applying this layout.');
       const result = buildPhotoLayout(project, photoId, options);
       get().pushHistory('Build furnished room from photo');
-      updateActive(() => ({ room: result.room, items: result.items }));
+      updateActive((p) => ({ room: result.room, items: result.items, photos: p.photos.map((photo) => photo.id === photoId && photo.roomProposal ? { ...photo, roomProposal: { ...photo.roomProposal, geometryRejected: result.geometryRejected, scaleAnchor: result.scaleAnchor } } : photo) }));
       set({ selectedItemId: null, selectedId: null, trayOpen: false, placingItem: null, placingType: null, viewMode: 'overview' });
       return result;
     },
@@ -953,10 +912,27 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     loadFromStorage: () => {
-      const data = getStoredState();
-      if (data.projects) set({ projects: data.projects });
-      if (data.settings)
-        set({ settings: { ...DEFAULT_SETTINGS, ...data.settings } });
+      if (!loading) loading = (async () => {
+        if (typeof window === 'undefined') return;
+        try {
+          const stored = await readStudio();
+          if (stored !== undefined) {
+            const data = recoverStudio(stored);
+            if (data.projects) set({ projects: data.projects });
+            if (data.settings) set({ settings: data.settings, snap: data.settings.snap, showGrid: data.settings.showGrid });
+            if (data.skipped) get().addToast('Some saved data could not be opened. Other rooms were recovered.', 'warning');
+          } else {
+            await writeStudio({ projects: get().projects, settings: get().settings });
+            if (initialData.skipped) get().addToast('Some saved data could not be opened. Other rooms were recovered; the previous save is kept as a backup.', 'warning');
+          }
+          durableStorage = true;
+          // The legacy snapshot remains available as a migration backup. New edits
+          // are stored in IndexedDB, without serializing photos on each movement.
+        } catch {
+          get().addToast('Photo storage is unavailable. Using limited browser storage for this session.', 'warning');
+        }
+      })();
+      return loading;
     },
 
     initSamples: () => {

@@ -230,6 +230,17 @@ def merge_geometry(anchor, frames, transforms):
         half = np.array([abs(math.cos(angle))*item['widthM']+abs(math.sin(angle))*item['depthM'], abs(math.sin(angle))*item['widthM']+abs(math.cos(angle))*item['depthM']])/2
         lower = np.minimum(lower, np.asarray(item['centerXZ'])-half-.04)
         upper = np.maximum(upper, np.asarray(item['centerXZ'])+half+.04)
+    unconstrained = upper - lower
+    if not np.isfinite(unconstrained).all() or unconstrained.max() > 30:
+        raise ValueError('The fused evidence spans an implausible room extent')
+    # Registration and object priors cannot silently erase a supported anchor
+    # wall. Unknown crop limits may grow; observed wall coordinates stay fixed.
+    boundary_edges = proposal.get('boundaryEdges', ['view-limit']*4)
+    for axis, low_edge, high_edge in [(0, 3, 1), (1, 0, 2)]:
+        if boundary_edges[low_edge] == 'observed-wall':
+            lower[axis] = 0
+        if boundary_edges[high_edge] == 'observed-wall':
+            upper[axis] = [proposal['widthM'], proposal['depthM']][axis]
     size = upper-lower
     if not np.isfinite(size).all() or size.min() <= 0 or size.max() > 30:
         raise ValueError('The fused floor extent is implausible')
@@ -247,7 +258,7 @@ def merge_geometry(anchor, frames, transforms):
     proposal.update(widthM=float(size[0]), depthM=float(size[1]), floorCornersPx=[],
                     floorPolygonXZ=[[0,0],[float(size[0]),0],size.tolist(),[0,float(size[1])]],
                     imageToFloor=h.ravel().tolist(), furniture=merged,
-                    boundaryEdges=['view-limit']*4,
+                    boundaryEdges=boundary_edges,
                     fitting={**fit, 'floorOriginCamera': (origin+axis_x*lower[0]+axis_z*lower[1]).tolist()},
                     method='rootsift-depth-sim3-multi-view', partial=True, confidence='low')
     proposal['warnings'] = [*proposal['warnings'], 'Aligned photos share a floor frame. Boundaries remain partial; confirm scale with a real measurement.'][-20:]
@@ -262,11 +273,21 @@ def reconstruct_views(captures, analyze: Callable, decode: Callable, budget_s=12
         reports.append(report)
         try:
             image = decode(capture.image)
+            height, width = image.shape[:2]
             resize = min(1., 1280/max(image.shape[:2]))
             if resize < 1:
                 image = cv2.resize(image, None, fx=resize, fy=resize, interpolation=cv2.INTER_AREA)
             score, hint = quality(image)
-            frames.append(dict(id=capture.id, image=image, quality=score, hint=hint, report=report))
+            sx, sy = image.shape[1] / width, image.shape[0] / height
+            hints = {}
+            calibration = getattr(capture, 'intrinsics', None)
+            if calibration is not None:
+                k = calibration.model_dump() if hasattr(calibration, 'model_dump') else calibration
+                hints['intrinsics'] = dict(fx=k['fx']*sx, fy=k['fy']*sy, cx=k['cx']*sx, cy=k['cy']*sy)
+            floor_region = getattr(capture, 'floor_region', None)
+            if floor_region is not None:
+                hints['floor_region'] = [[x*sx, y*sy] for x, y in floor_region]
+            frames.append(dict(id=capture.id, image=image, quality=score, hint=hint, report=report, hints=hints))
             if hint:
                 report['message'] = hint + ' Kept as a reference.'
         except Exception:
@@ -279,7 +300,7 @@ def reconstruct_views(captures, analyze: Callable, decode: Callable, budget_s=12
             continue
         try:
             frame_start = now()
-            detections, depth, proposal = analyze(frame['image'])
+            detections, depth, proposal = analyze(frame['image'], **frame['hints'])
             last_cost = max(1., now()-frame_start)
             for detection in detections:
                 detection.mask_uri = detection.raw_mask_uri = detection.thumbnail_uri = None
@@ -312,7 +333,12 @@ def reconstruct_views(captures, analyze: Callable, decode: Callable, budget_s=12
                     if pair is None:
                         continue
                     transform, count, residual = pair
-                    transforms[source['id']] = transforms[target['id']] @ transform
+                    composed = transforms[target['id']] @ transform
+                    total_scale = float(np.cbrt(np.linalg.det(composed[:3, :3])))
+                    if not np.isfinite(composed).all() or not .5 < total_scale < 2:
+                        source['report']['message'] = 'Accumulated scale was inconsistent. Kept as a reference.'
+                        continue
+                    transforms[source['id']] = composed
                     source['report'].update(status='aligned', inlierCount=count, residualM=round(residual,4), message='Aligned with the starting view.')
                     remaining.remove(source)
                     queue.append(source)
@@ -331,6 +357,6 @@ def reconstruct_views(captures, analyze: Callable, decode: Callable, budget_s=12
     if not any(r['status'] == 'aligned' for r in reports):
         proposal['warnings'] = [*proposal['warnings'], 'Using the best available single view. Other photos remain references; their dimensions were not averaged.'][-20:]
     return dict(anchor_photo_id=proposal['multiView']['anchorPhotoId'], room_proposal=proposal,
-                views=[dict(photo_id=f['id'], detections=[d.model_dump(exclude={'mask_uri','raw_mask_uri','thumbnail_uri','mask_polygon'}) for d in f.get('detections',[])],
+                views=[dict(photo_id=f['id'], detections=[d.model_dump(exclude={'mask_uri','raw_mask_uri','thumbnail_uri'}) for d in f.get('detections',[])],
                             image_dimensions=dict(width=f['image'].shape[1],height=f['image'].shape[0]), analyzed='proposal' in f) for f in frames],
                 processing_time_ms=round((now()-start)*1000))

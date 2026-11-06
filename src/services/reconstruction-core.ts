@@ -24,6 +24,11 @@ export function mapRoomProposalToSource(
   const sx = source.width / analysis.width, sy = source.height / analysis.height;
   const scaled: RoomReconstructionProposal = {
     ...proposal,
+    ...(proposal.floorSupport ? { floorSupport: { ...proposal.floorSupport,
+      originPx: [proposal.floorSupport.originPx[0] * sx, proposal.floorSupport.originPx[1] * sy],
+      stepPx: [proposal.floorSupport.stepPx[0] * sx, proposal.floorSupport.stepPx[1] * sy],
+    } } : {}),
+    ...(proposal.scaleAnchor ? { scaleAnchor: { ...proposal.scaleAnchor, pointsPx: proposal.scaleAnchor.pointsPx.map(([x, y]) => [x * sx, y * sy]) as [[number, number], [number, number]] } } : {}),
     floorCornersPx: proposal.floorCornersPx.map(([x, y]) => [x * sx, y * sy]),
     ...(proposal.imageToFloor ? {
       imageToFloor: proposal.imageToFloor.map((v, i) => i % 3 === 0 ? v / sx : i % 3 === 1 ? v / sy : v),

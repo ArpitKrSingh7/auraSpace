@@ -32,6 +32,7 @@ import {
   Redo2,
   RotateCw,
   Settings2,
+  Move,
   SlidersHorizontal,
   Sparkles,
   Undo2,
@@ -94,13 +95,18 @@ export default function EditorPage() {
   const [openingPreview, setOpeningPreview] = useState<{ id: string; angle: number } | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-    openProject(projectId);
-    setTrayOpen(false);
-    setSelectedOpeningId(null);
-    setOpeningPreview(null);
-    if (new URLSearchParams(window.location.search).has('capture'))
-      setShowPhotoUpload(true);
+    let active = true;
+    setMounted(false);
+    void useAppStore.getState().loadFromStorage().then(() => {
+      if (!active) return;
+      openProject(projectId);
+      setTrayOpen(false);
+      setSelectedOpeningId(null);
+      setOpeningPreview(null);
+      if (new URLSearchParams(window.location.search).has('capture')) setShowPhotoUpload(true);
+      setMounted(true);
+    });
+    return () => { active = false; };
   }, [projectId, openProject, setTrayOpen]);
 
   useEffect(() => {
@@ -423,9 +429,17 @@ export default function EditorPage() {
           selectedOpeningId={selectedOpeningId}
           onMove={moveItem}
           onRotate={(id, rotation) => useAppStore.getState().updateItem(id, { rotation })}
-          onPlace={placingItem ? (x, z) => confirmPlacing(x, z) : undefined}
+          onPlace={placingItem ? confirmPlacing : undefined}
           placing={placingItem}
         />
+        {!placingItem && !trayOpen && project.items.some((item) => item.placed) && (
+          <select aria-label="Select furniture" value={selectedItemId ?? ''}
+            className="absolute left-3 top-20 max-w-40 truncate rounded-xl border border-surface-200 bg-white/95 px-3 py-2.5 text-xs shadow-soft md:top-4"
+            onChange={(e) => { closeOpening(); selectItem(e.target.value || null); }}>
+            <option value="">Objects</option>
+            {project.items.filter((item) => item.placed).map((item) => <option key={item.id} value={item.id}>{item.name}{item.locked ? ' (locked)' : ''}</option>)}
+          </select>
+        )}
         {project.items.length === 0 && !placingItem && !trayOpen && (
           <div className="pointer-events-none absolute inset-x-5 top-24 text-center sm:top-8">
             <p className="studio-heading text-2xl text-surface-700">
@@ -437,9 +451,14 @@ export default function EditorPage() {
           </div>
         )}
         {placingItem && (
-          <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-2xl border border-surface-200 bg-white px-4 py-3 shadow-medium">
-            <span className="text-xs font-medium">
-              Tap the floor to place {placingItem.name.toLowerCase()}
+          <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 items-center gap-3 max-w-[calc(100%-24px)] rounded-2xl border border-surface-200 bg-white px-4 py-3 shadow-medium">
+            <select aria-label="Placement surface" value={placingItem.mounting ?? 'floor'}
+              className="rounded-lg border border-surface-200 bg-white px-2 py-2 text-sm"
+              onChange={(e) => useAppStore.getState().setPlacementSurface(e.target.value as 'floor' | 'wall' | 'ceiling')}>
+              <option value="floor">Floor</option><option value="wall">Wall</option><option value="ceiling">Ceiling</option>
+            </select>
+            <span className="text-xs font-medium whitespace-nowrap">
+              {placingItem.mounting === 'wall' ? viewMode === 'plan' ? 'Tap near a wall' : 'Tap a wall' : 'Tap to place'}
             </span>
             <button
               className="rounded-md p-1 text-surface-500 hover:bg-surface-100"
@@ -464,6 +483,11 @@ export default function EditorPage() {
                 >
                   <SlidersHorizontal size={16} />
                   <span>Details</span>
+                </button>
+                <button className="btn-ghost !px-3" disabled={selectedItem.locked}
+                  aria-label="Move selected furniture" title="Move to another surface"
+                  onClick={() => { setShowDetails(false); setShowRotation(false); useAppStore.setState({ placingItem: selectedItem, placingType: selectedItem.type }); }}>
+                  <Move size={16} />
                 </button>
                 <button
                   className="btn-ghost !px-3"

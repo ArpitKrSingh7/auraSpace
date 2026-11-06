@@ -36,27 +36,7 @@ export function ItemInspector({
     ? validatePlacement(item, project.room, project.items)
     : [];
 
-  const [width, setWidth] = useState(item.width);
-  const [depth, setDepth] = useState(item.depth);
-  const [height, setHeight] = useState(item.height);
-  const [elevation, setElevation] = useState(item.elevationM ?? 0);
   const mounting = item.mounting ?? 'floor';
-
-  useEffect(() => {
-    setWidth(item.width);
-    setDepth(item.depth);
-    setHeight(item.height);
-  }, [item.width, item.depth, item.height]);
-
-  useEffect(() => {
-    setElevation(item.elevationM ?? 0);
-  }, [item.id, item.elevationM]);
-
-  const applySize = () => {
-    if (width > 0 && depth > 0 && height > 0) {
-      resizeItem(item.id, width, depth, height);
-    }
-  };
 
   return (
     <div className="bg-white">
@@ -66,7 +46,7 @@ export function ItemInspector({
           <div>
             <h3 className="text-sm font-semibold">{item.name}</h3>
             <span
-              className={`text-[10px] ${item.source === 'measured' ? 'text-emerald-600' : 'text-amber-600'}`}
+              className={`text-xs ${item.source === 'measured' ? 'text-emerald-600' : 'text-amber-600'}`}
             >
               {item.source === 'measured'
                 ? '📏 Measured'
@@ -104,47 +84,13 @@ export function ItemInspector({
         {/* Dimensions */}
         <div>
           <label className="label mb-2 block">Dimensions (meters)</label>
-          {item.source !== 'measured' && <p className="mb-2 text-xs text-amber-700">These dimensions are estimates. Replace them with measurements of your piece.</p>}
           <div className="grid grid-cols-3 gap-2">
-            <div>
-              <span className="text-[10px] text-surface-500">Width</span>
-              <input
-                className="input-field text-sm"
-                type="number"
-                step={0.05}
-                min={0.01}
-                max={12}
-                value={width}
-                onChange={(e) => setWidth(Number(e.target.value))}
-                onBlur={applySize}
-              />
-            </div>
-            <div>
-              <span className="text-[10px] text-surface-500">Depth</span>
-              <input
-                className="input-field text-sm"
-                type="number"
-                step={0.05}
-                min={0.01}
-                max={12}
-                value={depth}
-                onChange={(e) => setDepth(Number(e.target.value))}
-                onBlur={applySize}
-              />
-            </div>
-            <div>
-              <span className="text-[10px] text-surface-500">Height</span>
-              <input
-                className="input-field text-sm"
-                type="number"
-                step={0.05}
-                min={0.01}
-                max={12}
-                value={height}
-                onChange={(e) => setHeight(Number(e.target.value))}
-                onBlur={applySize}
-              />
-            </div>
+            {(['width', 'depth', 'height'] as const).map((axis) => (
+              <label key={`${item.id}-${axis}`} className="text-xs capitalize text-surface-500">{axis}
+                <DraftNumber value={item[axis]} label={`${axis} (meters)`} min={0.01} max={12} step={0.05} disabled={item.locked}
+                  onCommit={(value) => resizeItem(item.id, axis === 'width' ? value : item.width, axis === 'depth' ? value : item.depth, axis === 'height' ? value : item.height)} />
+              </label>
+            ))}
           </div>
         </div>
 
@@ -162,72 +108,43 @@ export function ItemInspector({
             ))}
           </div>
           {mounting === 'ceiling' ? (
-            <p className="mt-2 text-xs text-surface-500">Follows the ceiling. Bottom is {Math.max(0, (project?.room.height ?? 0) - item.height).toFixed(2)} m above the floor.</p>
+            <p className="mt-2 text-xs text-surface-500">Bottom: {Math.max(0, (project?.room.height ?? 0) - item.height).toFixed(2)} m</p>
           ) : (
             <label className="mt-3 block text-xs text-surface-500">
-              Height above floor, to bottom (m)
-              <input
-                className="input-field mt-1 text-sm disabled:opacity-50"
-                aria-label="Height above floor, to bottom (meters)"
-                type="number"
-                step={0.05}
-                min={0}
-                max={12}
-                disabled={item.locked}
-                value={elevation}
-                onChange={(event) => setElevation(Number(event.target.value))}
-                onBlur={() => {
-                  if (Number.isFinite(elevation) && elevation >= 0 && elevation <= 12) updateItem(item.id, { elevationM: elevation });
-                  else setElevation(item.elevationM ?? 0);
-                }}
-              />
+              Bottom height (m)
+              <DraftNumber key={item.id} value={item.elevationM ?? 0} label="Height above floor, to bottom (meters)"
+                min={0} max={Math.max(0, (project?.room.height ?? 12) - item.height)} step={0.05} disabled={item.locked}
+                onCommit={(value) => updateItem(item.id, { elevationM: value })} />
             </label>
           )}
-          {item.locked && <p className="mt-2 text-xs text-surface-500">Unlock this piece to change its placement.</p>}
+
         </div>
 
         {/* Position */}
         {item.placed && (
           <div>
             <label className="label mb-2 block">Position</label>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <span className="text-[10px] text-surface-500">X</span>
-                <input
-                  className="input-field text-sm"
-                  type="number"
-                  step={0.1}
-                  value={item.x.toFixed(2)}
-                  onChange={(e) =>
-                    moveItem(item.id, Number(e.target.value), item.z)
-                  }
-                />
-              </div>
-              <div>
-                <span className="text-[10px] text-surface-500">Z</span>
-                <input
-                  className="input-field text-sm"
-                  type="number"
-                  step={0.1}
-                  value={item.z.toFixed(2)}
-                  onChange={(e) =>
-                    moveItem(item.id, item.x, Number(e.target.value))
-                  }
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(['x', 'z'] as const).map((axis) => (
+                <label key={`${item.id}-${axis}`} className="text-xs uppercase text-surface-500">{axis} (m)
+                  <DraftNumber value={item[axis]} label={`Position ${axis} (meters)`} min={0}
+                    max={axis === 'x' ? project?.room.width ?? 30 : project?.room.depth ?? 30} step={0.1} disabled={item.locked}
+                    onCommit={(value) => moveItem(item.id, axis === 'x' ? value : item.x, axis === 'z' ? value : item.z)} />
+                </label>
+              ))}
             </div>
           </div>
         )}
 
         <div className="rounded-xl border border-surface-200 bg-surface-50 p-3">
           <p className="label mb-3">Rotation</p>
-          <RotationControl value={item.rotation} disabled={item.locked}
+          <RotationControl value={item.rotation} disabled={item.locked || mounting === 'wall'}
             onPreview={onRotationPreview} onCancel={onRotationEnd}
             onCommit={(rotation) => {
               if (rotation !== item.rotation) updateItem(item.id, { rotation });
               onRotationEnd?.();
             }} />
-          {item.locked && <p className="mt-2 text-xs text-surface-500">Unlock this piece to rotate it.</p>}
+
         </div>
 
         {/* Color */}
@@ -235,6 +152,7 @@ export function ItemInspector({
           <label className="label mb-2 block">Color</label>
           <div className="flex items-center gap-2">
             <input
+              aria-label="Furniture color"
               type="color"
               value={item.color}
               onChange={(e) => recolorItem(item.id, e.target.value)}
@@ -250,12 +168,14 @@ export function ItemInspector({
         <div className="flex flex-wrap gap-2">
           <button
             className="btn-ghost text-xs flex items-center gap-1"
+            disabled={item.locked || mounting === 'wall'}
             onClick={() => rotateItem(item.id, 45)}
           >
             <RotateCw className="w-3.5 h-3.5" /> Rotate 45°
           </button>
           <button
             className="btn-ghost text-xs flex items-center gap-1"
+            disabled={item.locked || mounting === 'wall'}
             onClick={() => rotateItem(item.id, 90)}
           >
             <RotateCw className="w-3.5 h-3.5" /> 90°
@@ -282,6 +202,7 @@ export function ItemInspector({
           {item.placed && (
             <button
               className="btn-ghost text-xs flex items-center gap-1 text-amber-600"
+              disabled={item.locked}
               onClick={() => returnToTray(item.id)}
             >
               <ChevronDown className="w-3.5 h-3.5" /> To Tray
@@ -300,4 +221,24 @@ export function ItemInspector({
       </div>
     </div>
   );
+}
+
+// Keep incomplete input local. A confirmed field change creates one undo step.
+function DraftNumber({ value, label, min, max, step, disabled, onCommit }: {
+  value: number; label: string; min: number; max: number; step: number; disabled?: boolean; onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(Number(value.toFixed(3))));
+  useEffect(() => setDraft(String(Number(value.toFixed(3)))), [value]);
+  return <input type="number" className="input-field mt-1 text-sm disabled:opacity-50" aria-label={label}
+    min={min} max={max} step={step} disabled={disabled} value={draft}
+    onChange={(e) => setDraft(e.target.value)}
+    onKeyDown={(e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); e.currentTarget.value = String(value); e.currentTarget.blur(); }
+      if (e.key === 'Enter') e.currentTarget.blur();
+    }}
+    onBlur={(e) => {
+      const raw = e.currentTarget.value, next = Number(raw);
+      setDraft(String(Number(value.toFixed(3))));
+      if (raw.trim() && Number.isFinite(next) && next >= min && next <= max && next !== value) onCommit(next);
+    }} />;
 }

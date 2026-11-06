@@ -1,3 +1,5 @@
+import { mapFloorPoint } from '../../packages/scene-domain/src/calibration';
+import { pointInPolygon } from '../../packages/scene-domain/src/spatial';
 import { makeItem } from '../domain/catalog';
 import { getCorners, normalizeRotation, overlaps, validatePlacement } from '../domain/geometry';
 import type { Detection, FurnitureItem, Project, Room } from '../domain/types';
@@ -5,6 +7,9 @@ import { validateItem, validateRoom } from '../domain/validation';
 
 export interface PhotoLayoutOptions {
   selectedIds?: string[];
+  scaleAnchor?: { pointsPx: [[number, number], [number, number]]; lengthM: number } | null;
+  preserveObservedPoses?: boolean;
+  useEstimatedGeometry?: boolean;
   widthM?: number;
   depthM?: number;
 }
@@ -21,10 +26,14 @@ export function photoLayoutObservations(project: Project, photoId: string) {
     return photo.detections.map((detection) => ({
       photo, detection, key: `${photo.id}:${detection.id}`,
       defaultSelected: distinct.has(detection.id) && (fused ?
-        !!anchor.roomProposal?.furniture?.some((pose) => (pose.photoId ?? photoId) === photo.id && detection.id === `det-${pose.detectionIndex}`) : photo.id === photoId),
+        !!anchor.roomProposal?.furniture?.some((pose) => (pose.photoId ?? photoId) === photo.id && detectionMatchesPose(detection, pose.detectionIndex)) : photo.id === photoId),
       reference: views?.find((v) => v.photoId === photo.id)?.status === 'reference',
     }));
   });
+}
+
+function detectionMatchesPose(detection: Detection, index: number) {
+  return detection.analysisIndex !== undefined ? detection.analysisIndex === index : detection.id === `det-${index}`;
 }
 
 /** Remove conflicting labels for the same large object, not separate objects. */
@@ -54,6 +63,7 @@ const ranges = {
 } as const;
 
 function fitPosition(item: FurnitureItem, room: Room, obstacles: FurnitureItem[], target: { x: number; z: number }, preservePose = false) {
+  if (preservePose) return { ...item, ...target };
   let best: FurnitureItem | undefined, cost = Infinity;
   for (const angle of preservePose ? [] : [item.rotation, normalizeRotation(item.rotation + 90)]) {
     const atOrigin = { ...item, rotation: angle, x: 0, z: 0 };
@@ -93,14 +103,36 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
     if (value !== undefined && (!Number.isFinite(value) || value < 1 || value > 40)) throw new Error('Room width and length must be between 1 and 40 metres.');
   const proposal = photo.roomProposal;
   const fused = proposal?.multiView?.views.some((v) => v.status === 'aligned');
-  const supported = proposal?.status === 'estimated' && proposal.source === 'model-estimated' && !!proposal.widthM && !!proposal.depthM;
+  const geometryRejected = options.useEstimatedGeometry === false || (options.useEstimatedGeometry === undefined && proposal?.geometryRejected === true);
+  const supported = !geometryRejected && proposal?.status === 'estimated' && proposal.source === 'model-estimated' && !!proposal.widthM && !!proposal.depthM;
   const keepSize = project.items.some((item) => item.placed);
   const keepWidth = keepSize || ['user-measured', 'product-specification'].includes(project.room.dimensionSources?.width ?? '');
   const keepDepth = keepSize || ['user-measured', 'product-specification'].includes(project.room.dimensionSources?.depth ?? '');
-  const referenceWidth = options.widthM ?? (keepWidth ? project.room.width : undefined);
-  const referenceDepth = options.depthM ?? (keepDepth ? project.room.depth : undefined);
-  const scale = supported ? referenceWidth !== undefined ? referenceWidth / proposal!.widthM! : referenceDepth !== undefined ? referenceDepth / proposal!.depthM! : 1 : 1;
-  const calibrated = supported && (referenceWidth !== undefined || referenceDepth !== undefined);
+  let scale = 1;
+  const anchor = geometryRejected ? null : options.scaleAnchor === undefined ? proposal?.scaleAnchor : options.scaleAnchor;
+  if (anchor) {
+    if (!supported || !proposal?.imageToFloor) throw new Error('This photo has no supported floor projection to calibrate.');
+    if (!Number.isFinite(anchor.lengthM) || anchor.lengthM <= 0 || anchor.lengthM > 100 ||
+      anchor.pointsPx.length !== 2 || !anchor.pointsPx.every((p) => p.length === 2 && p.every(Number.isFinite) && p[0] >= 0 && p[0] <= photo.width && p[1] >= 0 && p[1] <= photo.height))
+      throw new Error('Choose two points inside the source photo and a positive measured length.');
+    const polygon = proposal.floorPolygonXZ ?? [[0, 0], [proposal.widthM!, 0], [proposal.widthM!, proposal.depthM!], [0, proposal.depthM!]];
+    const points = anchor.pointsPx.map((p) => mapFloorPoint(proposal.imageToFloor!, p));
+    if (points.some((p) => !p || !pointInPolygon(p, polygon as [number, number][]))) throw new Error('Choose both reference points on the supported floor.');
+    if (proposal.floorSupport) {
+      const support = proposal.floorSupport;
+      for (const [x, y] of anchor.pointsPx) {
+        const col = Math.round((x - support.originPx[0]) / support.stepPx[0]), row = Math.round((y - support.originPx[1]) / support.stepPx[1]);
+        if (col < 0 || col >= support.columns || row < 0 || row >= support.rows || !support.cells.includes(row * support.columns + col))
+          throw new Error('Choose reference points in the highlighted floor evidence, away from furniture.');
+      }
+    }
+    const distance = Math.hypot(points[0]![0]-points[1]![0], points[0]![1]-points[1]![1]);
+    if (distance < .01 || Math.hypot(anchor.pointsPx[0][0]-anchor.pointsPx[1][0], anchor.pointsPx[0][1]-anchor.pointsPx[1][1]) < 8)
+      throw new Error('Choose floor points farther apart for a stable reference.');
+    scale = anchor.lengthM / distance;
+    if (scale < .1 || scale > 10) throw new Error('The reference implies an implausible scale. Check the points and units.');
+  }
+  const calibrated = !!anchor;
   const width = options.widthM ?? (supported && !keepWidth ? proposal!.widthM! * scale : project.room.width);
   const depth = options.depthM ?? (supported && !keepDepth ? proposal!.depthM! * scale : project.room.depth);
   const room = validateRoom({ ...project.room, width, depth,
@@ -113,18 +145,17 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
   const observations = photoLayoutObservations(project, photoId);
   const selected = new Set(options.selectedIds ?? observations.filter((o) => o.defaultSelected).map((o) => o.key));
   const detections = observations.filter((o) => selected.has(o.key) || (o.photo.id === photoId && selected.has(o.detection.id)));
-  if (!detections.length && observations.length) throw new Error('Select at least one item, or mark a missing item in the photo.');
   // Replace suggestions only from this capture group. An unrelated photo is
   // not evidence that its furniture represents the same physical objects.
   const groupIds = new Set(proposal?.multiView?.views.map((v) => v.photoId) ?? [photoId]);
-  const retained = project.items.filter((item) => !item.photoId || !groupIds.has(item.photoId) || item.locked || item.source === 'measured' ||
-    project.photos.find((p) => p.id === item.photoId)?.detections.some((d) => d.id === item.detectionId && d.source === 'manual'));
-  const sx = supported ? width / proposal!.widthM! : 1, sz = supported ? depth / proposal!.depthM! : 1;
+  const retained = project.items.filter((item) => !item.photoId || !groupIds.has(item.photoId) || item.edited || item.locked || item.source === 'measured' ||
+    project.photos.find((p) => p.id === item.photoId)?.detections.some((d) => d.id === item.detectionId && d.type === item.type && d.source === 'manual'));
+  const sx = scale, sz = scale;
   const counts: Record<string, number> = {};
   const pending = detections.filter((o) => !retained.some((item) => item.photoId === o.photo.id && item.detectionId === o.detection.id)).map(({ detection, photo: sourcePhoto }) => {
-    const pose = supported ? proposal!.furniture?.find((p) => detection.id === `det-${p.detectionIndex}` && (p.photoId ?? photoId) === sourcePhoto.id) : undefined;
+    const pose = supported && detection.source !== 'manual' ? proposal!.furniture?.find((p) => detectionMatchesPose(detection, p.detectionIndex) && (p.photoId ?? photoId) === sourcePhoto.id) : undefined;
     const item = makeItem(detection.type, { id: `${sourcePhoto.id}-${detection.id}`.slice(0, 128), photoId: sourcePhoto.id, detectionId: detection.id, placed: true,
-      source: 'estimated', name: `${detection.type === 'table' ? 'Study table' : detection.type === 'bed' ? 'Bed' : detection.type === 'chair' ? 'Chair' : detection.label} ${counts[detection.type] = (counts[detection.type] ?? 0) + 1}`,
+      source: 'estimated', name: `${detection.type === 'table' ? 'Table' : detection.type === 'bed' ? 'Bed' : detection.type === 'chair' ? 'Chair' : detection.label} ${counts[detection.type] = (counts[detection.type] ?? 0) + 1}`,
       ...(detection.color ? { color: detection.color } : {}),
       ...(detection.type === 'bed' ? { width: .95, depth: 2, height: .6 } : {}),
       ...(detection.type === 'table' || detection.type === 'desk' ? { width: 1.3, depth: .65, height: .75 } : {}),
@@ -138,7 +169,7 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
       item.height = pose.heightM * Math.sqrt(sx * sz);
       item.rotation = normalizeRotation(Math.atan2(Math.sin(radians) * sz, Math.cos(radians) * sx) * 180 / Math.PI);
       const snapped = normalizeRotation(Math.round(item.rotation / 90) * 90);
-      if (!fused && Math.abs(Math.atan2(Math.sin((snapped - item.rotation) * Math.PI / 180), Math.cos((snapped - item.rotation) * Math.PI / 180))) < Math.PI / 6) item.rotation = snapped;
+      if (!options.preserveObservedPoses && !fused && Math.abs(Math.atan2(Math.sin((snapped - item.rotation) * Math.PI / 180), Math.cos((snapped - item.rotation) * Math.PI / 180))) < Math.PI / 6) item.rotation = snapped;
       target = { x: pose.centerXZ[0] * sx, z: pose.centerXZ[1] * sz };
       const range = ranges[detection.type as keyof typeof ranges];
       if (range) for (const axis of ['width', 'depth', 'height'] as const) item[axis] = clamp(item[axis], range[axis][0], range[axis][1]);
@@ -154,12 +185,11 @@ export function buildPhotoLayout(project: Project, photoId: string, options: Pho
   }).sort((a, b) => b.item.width * b.item.depth - a.item.width * a.item.depth);
   const items = [...retained], added: FurnitureItem[] = [];
   for (const { item, target, projected } of pending) {
-    const placed = fitPosition(item, room, items.filter((i) => i.placed), target, !!fused && projected);
-    items.push(placed); added.push(placed);
+    const placed = fitPosition(item, room, items.filter((i) => i.placed), target, (!!fused || !!options.preserveObservedPoses) && projected);
+    items.push(validateItem(placed)); added.push(placed);
   }
-  const warnings = added.flatMap((item) => validatePlacement(item, room, items).map((warning) => `${item.name}: ${warning}`));
-  if (supported && calibrated && proposal?.partial)
-    warnings.unshift('Room dimensions were fitted to a partial visible extent. Hidden boundaries can distort furniture scale; verify item sizes separately.');
+  const warnings = items.filter((item) => item.placed).flatMap((item) => validatePlacement(item, room, items).map((warning) => `${item.name}: ${warning}`));
+  if (supported && proposal?.partial) warnings.unshift('The visible floor is partial. Room dimensions edit the boundary; only a measured floor reference calibrates furniture scale.');
   if (pending.some((p) => !p.projected)) warnings.unshift('Some positions follow the photo composition because reliable floor depth was unavailable. Check them in the planner.');
-  return { room, items, added, warnings: [...new Set(warnings)], projectedCount: pending.filter((p) => p.projected).length };
+  return { room, items, added, geometryRejected, scaleAnchor: anchor ?? undefined, warnings: [...new Set(warnings)], projectedCount: pending.filter((p) => p.projected).length };
 }

@@ -23,6 +23,20 @@ def det(label='bed', score=.9):
 
 
 class MultiViewGeometryTests(unittest.TestCase):
+    def test_batch_resize_scales_camera_and_review_region_with_actual_pixel_dimensions(self):
+        image = np.zeros((901, 1601, 3), np.uint8)
+        seen = []
+        capture = SimpleNamespace(id='calibrated', image='fixture', intrinsics=dict(fx=1400,fy=1390,cx=800,cy=450), floor_region=[[200,500],[900,500],[900,800],[200,800]])
+        def analyze(image, **hints):
+            seen.append((image.shape, hints))
+            return [], None, unavailable_room_proposal('Fixture')
+        reconstruct_views([capture], analyze, lambda _: image)
+        shape, hints = seen[0]
+        sx, sy = shape[1]/1601, shape[0]/901
+        self.assertAlmostEqual(hints['intrinsics']['fx'], 1400*sx)
+        self.assertAlmostEqual(hints['intrinsics']['cy'], 450*sy)
+        np.testing.assert_allclose(hints['floor_region'][2], [900*sx,800*sy])
+
     def test_actual_overlapping_images_recover_independently_rendered_camera_motion(self):
         frames, poses = [], []
         for offset, yaw in [([0, 0, 0], 0), ([.35, 0, .18], 8)]:
@@ -102,7 +116,9 @@ class MultiViewGeometryTests(unittest.TestCase):
         self.assertEqual(len(fused['furniture']),1)  # same physical bed
         self.assertEqual(fused['furniture'][0]['photoId'],'b')
         self.assertEqual(fused['method'],'rootsift-depth-sim3-multi-view')
-        self.assertEqual(fused['boundaryEdges'],['view-limit']*4)
+        self.assertEqual(fused['boundaryEdges'], original['boundaryEdges'])
+        self.assertIn('observed-wall', fused['boundaryEdges'])
+        self.assertAlmostEqual(fused['widthM'], 5.2, delta=.12)
         json.dumps(fused,allow_nan=False)
 
 
@@ -196,7 +212,7 @@ class MultiViewFlowTests(unittest.TestCase):
         self.assertEqual(result['anchor_photo_id'], 'room')
         self.assertEqual(result['views'][0]['detections'][0]['label'], 'bed')
         self.assertNotIn('depth_raw', result)
-        self.assertNotIn('mask_polygon', result['views'][0]['detections'][0])
+        self.assertEqual(result['views'][0]['detections'][0]['mask_polygon'], det().mask_polygon)
         self.assertNotIn('fitting', result['room_proposal'])
         json.dumps(result, allow_nan=False)
 

@@ -218,6 +218,36 @@ class RoomReconstructionTests(unittest.TestCase):
                 self.assertEqual(result["floorCornersPx"], [])
                 self.assertNotIn("imageToFloor", result)
 
+    def test_reviewed_floor_patch_guides_fit_without_requiring_bottom_edge_support(self):
+        image, depth, camera, _ = pinhole_room()
+        region = [[100, 145], [220, 145], [220, 180], [100, 180]]
+        result = reconstruct_room(image, depth, 'meters', intrinsics=camera, floor_region=region)
+        self.assertEqual(result['status'], 'estimated')
+        self.assertEqual(result['fitting']['floorSelection'], 'user-region')
+        self.assertAlmostEqual(result['fitting']['cameraHeightM'], 1.5, delta=.02)
+        self.assertAlmostEqual(result['widthM'], 5.2, delta=.12)
+        unavailable = reconstruct_room(image, depth, 'meters', intrinsics=camera, floor_region=region, boxes=[[100, 145, 120, 35]])
+        self.assertEqual(unavailable['status'], 'insufficient-evidence')
+
+    def test_floor_support_preserves_occlusion_gaps_and_contains_only_floor_samples(self):
+        image, depth, camera, labels = pinhole_room()
+        result = reconstruct_room(image, depth, 'meters', intrinsics=camera, boxes=[[130, 160, 60, 50]])
+        support = result['floorSupport']
+        self.assertLessEqual(support['columns'] * support['rows'], 10000)
+        self.assertEqual(len(support['cells']), result['fitting']['floorSampleCount'])
+        for cell in support['cells']:
+            x = support['originPx'][0] + (cell % support['columns']) * support['stepPx'][0]
+            y = support['originPx'][1] + (cell // support['columns']) * support['stepPx'][1]
+            self.assertFalse(130 <= x <= 190 and 160 <= y <= 210)
+            # Samples near a true wall/floor joint can satisfy the plane tolerance.
+            self.assertLess(abs(depth[y, x] * ((y-camera['cy'])/camera['fy'] * math.cos(math.radians(20)) + math.sin(math.radians(20))) - 1.5), .09)
+
+    def test_invalid_or_crossed_review_regions_cannot_select_a_floor(self):
+        image, depth, camera, _ = pinhole_room()
+        for region in [[[0,0],[320,240],[0,240],[320,0]], [[-1,10],[100,10],[100,80],[0,80]], [[0,0],[1,0],[1,1],[0,1]]]:
+            with self.assertRaises(ValueError):
+                reconstruct_room(image, depth, 'meters', intrinsics=camera, floor_region=region)
+
     def test_floor_fit_is_deterministic(self):
         image, depth, camera, _ = pinhole_room(width=160, height=120)
         first = reconstruct_room(image, depth, "meters", intrinsics=camera)

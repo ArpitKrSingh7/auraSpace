@@ -8,9 +8,9 @@ JSON-serialisable and works seamlessly over REST.
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, FiniteFloat, field_validator
 
 
 # ── Shared primitives ──────────────────────────────────────────────────────
@@ -65,6 +65,8 @@ class AnalyzeRequest(BaseModel):
     include_depth: bool = Field(False, description="Whether to include depth estimation")
     include_room: bool = Field(False, description="Whether to include room geometry estimation")
     include_artifacts: bool = Field(True, description="Include mask PNGs and cutout thumbnails; disable for compact web drafts")
+    include_diagnostics: bool = Field(True, description="Include optional classical room and vanishing-point diagnostics")
+    floor_region: Optional[list[tuple[FiniteFloat, FiniteFloat]]] = Field(None, min_length=4, max_length=4)
     intrinsics: Optional[CameraIntrinsics] = Field(
         None, description="Optional calibrated fx, fy, cx, cy in oriented source-image pixels; otherwise a 60 degree horizontal field of view is assumed",
     )
@@ -87,6 +89,8 @@ class AnalyzeResponse(BaseModel):
 class RoomCapture(BaseModel):
     id: str = Field(..., min_length=1, max_length=128, pattern=r'^[a-zA-Z0-9_.:-]+$')
     image: str = Field(..., min_length=1, max_length=3_500_000)
+    intrinsics: Optional[CameraIntrinsics] = None
+    floor_region: Optional[list[tuple[FiniteFloat, FiniteFloat]]] = Field(None, min_length=4, max_length=4)
 
 
 class ReconstructRequest(BaseModel):
@@ -136,6 +140,26 @@ class ProcessResponse(BaseModel):
 
 # ── /inpaint ───────────────────────────────────────────────────────────────
 
+MaskCoordinate = Annotated[FiniteFloat, Field(ge=0, le=20_000_000)]
+MaskPoint = tuple[MaskCoordinate, MaskCoordinate]
+MaskPolygon = Annotated[list[MaskPoint], Field(min_length=3, max_length=1000)]
+
+
+class ReviewedStroke(BaseModel):
+    tool: Literal['paint', 'erase']
+    radius: Annotated[FiniteFloat, Field(ge=1, le=500)]
+    points: list[MaskPoint] = Field(min_length=1, max_length=3000)
+
+
+class ReviewedSelection(BaseModel):
+    polygons: list[MaskPolygon] = Field(default_factory=list, max_length=100)
+    strokes: list[ReviewedStroke] = Field(default_factory=list, max_length=300)
+    expansionPx: int = Field(default=0, ge=0, le=100)
+    box: Optional[tuple[MaskCoordinate, MaskCoordinate,
+                        Annotated[FiniteFloat, Field(gt=0, le=20_000_000)],
+                        Annotated[FiniteFloat, Field(gt=0, le=20_000_000)]]] = None
+
+
 class InpaintRequest(BaseModel):
     """Request to remove furniture from an image."""
     image: str = Field(..., min_length=1, max_length=17_000_000, description="Base64-encoded image")
@@ -149,19 +173,7 @@ class InpaintRequest(BaseModel):
     @field_validator("masks")
     @classmethod
     def valid_masks(cls, masks):
-        import math
-        for mask in masks:
-            if not 0 <= mask.get('expansionPx', 0) <= 100 or len(mask.get('polygons', [])) > 100 or len(mask.get('strokes', [])) > 300:
-                raise ValueError('Mask exceeds review limits')
-            for polygon in mask.get('polygons', []):
-                if not 3 <= len(polygon) <= 1000 or any(len(p)!=2 or not all(math.isfinite(v) and v>=0 for v in p) for p in polygon):
-                    raise ValueError('Invalid mask polygon')
-            for stroke in mask.get('strokes', []):
-                if stroke.get('tool') not in ('paint', 'erase') or not 1 <= stroke.get('radius', 0) <= 500 or not 1 <= len(stroke.get('points', [])) <= 3000:
-                    raise ValueError('Invalid brush stroke')
-                if any(len(p)!=2 or not all(math.isfinite(v) and v>=0 for v in p) for p in stroke['points']):
-                    raise ValueError('Invalid brush coordinates')
-        return masks
+        return [ReviewedSelection.model_validate(mask).model_dump() for mask in masks]
 
     @field_validator("boxes")
     @classmethod

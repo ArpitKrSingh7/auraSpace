@@ -14,6 +14,8 @@ import type { ImageOperation, Progress } from './vision-core';
 import { mapRoomProposalToSource } from './reconstruction-core';
 import type { RoomReconstructionProposal } from '../../packages/scene-domain/src/index';
 import { parseRoomViewsResponse } from './multi-photo-core';
+import { drawRemovalMask, scaleRemovalMask, type RemovalMask } from './removal-mask';
+import { scaledPhotoHints } from './photo-hints';
 export { VisionError } from './vision-core';
 
 const endpoint = process.env.NEXT_PUBLIC_VISION_API_URL
@@ -127,6 +129,7 @@ export async function analyzePhoto(
     return parseDetections(result.detections, canvas.width, canvas.height).map(
       (d) => ({
         ...d,
+        ...(d.maskPolygon ? { maskPolygon: d.maskPolygon.map(([x, y]): [number, number] => [x * photo.width / canvas.width, y * photo.height / canvas.height]) } : {}),
         box: [
           (d.box[0] * photo.width) / canvas.width,
           (d.box[1] * photo.height) / canvas.height,
@@ -197,6 +200,8 @@ export async function analyzeRoomScene(photo: Photo, onProgress?: Progress): Pro
     include_depth: false,
     include_room: true,
     include_artifacts: false,
+    include_diagnostics: false,
+    ...scaledPhotoHints(photo, canvas),
   }); } catch (error) {
     if (!(error instanceof VisionError) || !['service-unavailable', 'network'].includes(error.code)) throw error;
     onProgress?.('Room depth is unavailable. Finding furniture on your device…');
@@ -209,6 +214,7 @@ export async function analyzeRoomScene(photo: Photo, onProgress?: Progress): Pro
     const detections = parseDetections(result.detections, canvas.width, canvas.height).map((d) => ({
       ...d, box: [d.box[0] * photo.width / canvas.width, d.box[1] * photo.height / canvas.height,
         d.box[2] * photo.width / canvas.width, d.box[3] * photo.height / canvas.height] as Detection['box'],
+      ...(d.maskPolygon ? { maskPolygon: d.maskPolygon.map(([x, y]): [number, number] => [x * photo.width / canvas.width, y * photo.height / canvas.height]) } : {}),
     }));
     return { detections, roomProposal: mapRoomProposalToSource(result.room_proposal, canvas, photo) };
   } catch {
@@ -231,7 +237,7 @@ export async function analyzeRoomViews(photos: Photo[], onProgress?: Progress) {
     payload = [];
     for (const photo of photos) {
       const canvas = await canvasFor(photo, maxSide);
-      payload.push({ id: photo.id, image: canvas.toDataURL('image/jpeg', quality) });
+      payload.push({ id: photo.id, image: canvas.toDataURL('image/jpeg', quality), ...scaledPhotoHints(photo, canvas) });
     }
     if (JSON.stringify({ photos: payload }).length < 3_400_000) break;
     maxSide = Math.round(maxSide * .8); quality -= .08;
@@ -257,6 +263,13 @@ export async function analyzeRoomViews(photos: Photo[], onProgress?: Progress) {
   }
 }
 
+export async function inspectPhoto(photo: Photo, operation: 'clahe' | 'contours' | 'histogram') {
+  const canvas = await canvasFor(photo, 1280);
+  const result = await postVision('/api/vision', 'process', { image: canvas.toDataURL('image/jpeg', .88), operation });
+  if (typeof result.uri !== 'string' || !/^data:image\/(png|jpeg);base64,/.test(result.uri)) throw new VisionError('Invalid processing result.');
+  return { uri: result.uri, metadata: result.metadata as { histogram?: Record<string, number[]> } | undefined };
+}
+
 export async function processPhoto(
   photo: Photo,
   operation: ImageOperation,
@@ -275,13 +288,24 @@ export async function removeFurniture(
   photo: Photo,
   detections: Detection[],
   onProgress?: Progress,
+  reviewedMask?: RemovalMask,
 ): Promise<{ uri: string; method: string }> {
-  if (!detections.length)
+  if (!detections.length && !reviewedMask?.strokes.some((s) => s.tool === 'paint'))
     throw new VisionError(
       'Select or outline furniture to remove first.',
       'no-selection',
     );
   const canvas = await canvasFor(photo);
+  const mask = reviewedMask ? scaleRemovalMask(reviewedMask, photo, canvas) : undefined;
+  const maskCanvas = mask ? document.createElement('canvas') : undefined;
+  if (maskCanvas && mask) {
+    maskCanvas.width = canvas.width; maskCanvas.height = canvas.height;
+    drawRemovalMask(maskCanvas.getContext('2d')!, mask, canvas.width, canvas.height);
+    const pixels = maskCanvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    let selected = 0;
+    for (let i = 0; i < pixels.length; i += 4) if (pixels[i] > 127) selected++;
+    if (!selected || selected === canvas.width * canvas.height) throw new VisionError('Paint furniture to remove and leave some surrounding wall or floor visible.');
+  }
   const boxes = detections.map((d) => [
     (d.box[0] * canvas.width) / photo.width,
     (d.box[1] * canvas.height) / photo.height,
@@ -294,6 +318,7 @@ export async function removeFurniture(
     const result = await postVision(service, 'inpaint', {
       image: canvas.toDataURL('image/jpeg', 0.88),
       boxes,
+      ...(mask ? { masks: [mask] } : {}),
     });
     if (
       typeof result.uri !== 'string' ||
@@ -302,14 +327,16 @@ export async function removeFurniture(
     )
       throw new VisionError('The image service returned an invalid preview.');
     const generated = await canvasFor({ ...photo, uri: result.uri });
-    const mask = await canvasFor({ ...photo, uri: result.mask_uri });
-    if ([generated, mask].some((c) => c.width !== canvas.width || c.height !== canvas.height))
+    const responseMask = await canvasFor({ ...photo, uri: result.mask_uri });
+    if ([generated, responseMask].some((c) => c.width !== canvas.width || c.height !== canvas.height))
       throw new VisionError('The removal preview has different image coordinates. Retry with the original photo.', 'bad-response');
     const context = canvas.getContext('2d')!;
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-    pixels.data.set(compositeRemovalPixels(pixels.data,
+    const composed = compositeRemovalPixels(pixels.data,
       generated.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data,
-      mask.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data));
+      responseMask.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data);
+    pixels.data.set(maskCanvas ? compositeRemovalPixels(pixels.data, composed,
+      maskCanvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data) : composed);
     context.putImageData(pixels, 0, 0);
     return {
       uri: canvas.toDataURL('image/png'),
@@ -326,9 +353,16 @@ export async function removeFurniture(
   await new Promise((resolve) => setTimeout(resolve, 20));
   const context = canvas.getContext('2d')!;
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  pixels.data.set(
-    approximateSurfaceFill(pixels.data, canvas.width, canvas.height, boxes),
-  );
+  if (maskCanvas) {
+    const maskPixels = maskCanvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    let x0 = canvas.width, y0 = canvas.height, x1 = 0, y1 = 0;
+    for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+      if (maskPixels[(y * canvas.width + x) * 4] <= 127) continue;
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1); y1 = Math.max(y1, y + 1);
+    }
+    const generated = approximateSurfaceFill(pixels.data, canvas.width, canvas.height, [[x0, y0, x1-x0, y1-y0]]);
+    pixels.data.set(compositeRemovalPixels(pixels.data, generated, maskPixels));
+  } else pixels.data.set(approximateSurfaceFill(pixels.data, canvas.width, canvas.height, boxes));
   context.putImageData(pixels, 0, 0);
   return {
     uri: canvas.toDataURL('image/png'),

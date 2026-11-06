@@ -129,7 +129,7 @@ def _refine_plane(points: np.ndarray) -> tuple[np.ndarray, float] | None:
 
 
 def _fit_floor(points: np.ndarray, pixels: np.ndarray, threshold: float,
-               height: int, width: int) -> tuple[np.ndarray, float, np.ndarray] | None:
+               height: int, width: int, reviewed_region: bool = False) -> tuple[np.ndarray, float, np.ndarray] | None:
     rng = np.random.default_rng(741)
     best: np.ndarray | None = None
     best_count = 0
@@ -167,7 +167,9 @@ def _fit_floor(points: np.ndarray, pixels: np.ndarray, threshold: float,
     support = pixels[best]
     xspan = float(np.ptp(support[:, 0]))
     yspan = float(np.ptp(support[:, 1]))
-    if xspan < width * .22 or yspan < height * .12 or np.percentile(support[:, 1], 90) < height * .80:
+    if (xspan < width * (.12 if reviewed_region else .22) or
+            yspan < height * (.06 if reviewed_region else .12) or
+            (not reviewed_region and np.percentile(support[:, 1], 90) < height * .80)):
         return None
     return normal, d, best
 
@@ -282,7 +284,7 @@ def _limits(floor_xz: np.ndarray, origin: np.ndarray, xaxis: np.ndarray,
 
 def reconstruct_room(image: np.ndarray, depth: np.ndarray | None = None,
                      depth_units: str | None = None, boxes: Any = None,
-                     intrinsics: Any = None) -> dict[str, Any]:
+                     intrinsics: Any = None, floor_region: Any = None) -> dict[str, Any]:
     """Return a correctable partial floor shell or an honest unavailable result.
 
     ``depth`` must have source-image HxW shape and contain optical-axis Z in
@@ -294,6 +296,16 @@ def reconstruct_room(image: np.ndarray, depth: np.ndarray | None = None,
         raise ValueError("Room reconstruction needs a BGR image at least 16 pixels wide and high.")
     height, width = image.shape[:2]
     excluded = _exclusion((height, width), boxes)
+    region = None
+    if floor_region is not None:
+        polygon = np.asarray(floor_region, dtype=np.float64)
+        if (polygon.shape != (4, 2) or not np.isfinite(polygon).all() or
+                np.any(polygon < 0) or np.any(polygon[:, 0] > width) or np.any(polygon[:, 1] > height) or
+                not cv2.isContourConvex(polygon.astype(np.float32)) or
+                abs(cv2.contourArea(polygon.astype(np.float32))) < width * height * .005):
+            raise ValueError('Mark four ordered corners of a visible floor patch inside the photo.')
+        region = np.zeros((height, width), dtype=np.uint8)
+        cv2.fillPoly(region, [np.round(polygon).astype(np.int32)], 1)
     try:
         camera = _camera(width, height, intrinsics)
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
@@ -315,11 +327,11 @@ def reconstruct_room(image: np.ndarray, depth: np.ndarray | None = None,
     pixels = np.column_stack((uu[valid], vv[valid])).astype(np.float64)
     points = np.column_stack(((pixels[:, 0] - camera["cx"]) * z / camera["fx"],
                               (pixels[:, 1] - camera["cy"]) * z / camera["fy"], z))
-    lower = pixels[:, 1] >= height * .52
+    lower = region[vv, uu][valid] > 0 if region is not None else pixels[:, 1] >= height * .52
     if int(lower.sum()) < 100:
         return _unavailable(image, excluded, "The lower image has too little unobstructed depth to establish a floor.", camera)
     threshold = min(.085, .028 + .006 * float(np.median(z)))
-    fitted = _fit_floor(points[lower], pixels[lower], threshold, height, width)
+    fitted = _fit_floor(points[lower], pixels[lower], threshold, height, width, reviewed_region=region is not None)
     if fitted is None:
         return _unavailable(image, excluded, "No sufficiently supported plausible floor plane was found in metric depth. Review the photo or enter measured dimensions.", camera)
     normal, d, lower_inliers = fitted
@@ -373,16 +385,22 @@ def reconstruct_room(image: np.ndarray, depth: np.ndarray | None = None,
         warnings.append("The rectangular extent has no complete observed image quadrilateral. Image corners were omitted; the metric projection is valid only on the observed floor.")
     ratio = float(lower_inliers.mean())
     median_residual = float(np.median(floor_distance[inliers]))
+    support_grid = np.zeros(vv.shape, dtype=bool)
+    support_grid[valid] = inliers
     return {
         "status": "estimated", "source": "model-estimated",
         "method": "metric-depth-ransac-manhattan-visible-floor", "partial": True,
         "confidence": "medium" if camera["source"] == "provided" and ratio >= .55 and walls and median_residual < threshold * .5 else "low",
         "floorCornersPx": corners, "floorPolygonXZ": polygon,
+        "floorSupport": {"columns": vv.shape[1], "rows": vv.shape[0],
+                         "originPx": [int(uu[0, 0]), int(vv[0, 0])], "stepPx": [step, step],
+                         "cells": np.flatnonzero(support_grid).tolist()},
         "widthM": width_m, "depthM": depth_m,
         "imageToFloor": image_to_floor.reshape(-1).tolist(),
         "camera": camera, "boundaryEdges": edges, "warnings": warnings,
         "fitting": {
             "depthConvention": "optical-z-meters", "sampleCount": len(points),
+            "floorSelection": "user-region" if region is not None else "lower-image",
             "floorSampleCount": int(inliers.sum()), "lowerFloorInlierRatio": ratio,
             "floorNormalCamera": normal.tolist(), "floorOffsetM": d,
             "cameraHeightM": -d, "medianFloorResidualM": median_residual,

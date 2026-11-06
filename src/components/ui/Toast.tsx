@@ -20,6 +20,7 @@ const typeIcons: Record<string, string> = {
 
 export function ToastContainer() {
   const toasts = useAppStore((s) => s.toasts);
+  const storageError = useAppStore((s) => s.storageError);
   const removeToast = useAppStore((s) => s.removeToast);
   const [mounted, setMounted] = useState(false);
 
@@ -27,10 +28,11 @@ export function ToastContainer() {
     setMounted(true);
   }, []);
 
-  if (!mounted || toasts.length === 0) return null;
+  if (!mounted || (toasts.length === 0 && !storageError)) return null;
 
   const content = (
     <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 pointer-events-none max-w-sm w-full px-4">
+      {storageError && <div role="alert" className="rounded-xl bg-red-700 px-4 py-3 text-sm text-white shadow-medium pointer-events-auto">{storageError}</div>}
       {toasts.map((toast) => (
         <div
           key={toast.id}

@@ -41,6 +41,7 @@ from app.preprocessing import (
 from app.room_analysis import detect_vanishing_points, estimate_room_boundaries
 from app.room_reconstruction import reconstruct_room, unavailable_room_proposal
 from app.furniture_layout import populate_room_proposal
+from app.analysis_cache import compact_analysis_cache
 from app.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -58,17 +59,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _analyze_capture(image):
+def _analyze_capture(image, intrinsics=None, floor_region=None):
     """Compact internal analysis: raw depth stays in memory, never in JSON."""
-    detections = detect_furniture(image, include_artifacts=False)
+    key = compact_analysis_cache.key(image)
+    cached = compact_analysis_cache.get(key)
+    detections = cached[0] if cached else detect_furniture(image, include_artifacts=False)
     depth = None
     proposal = unavailable_room_proposal('Depth could not finish. Furniture can still be placed in an editable draft.')
     try:
-        result = estimate_depth_result(image)
+        result = cached[1] if cached else estimate_depth_result(image)
+        if not cached:
+            compact_analysis_cache.put(key, detections, result)
         if result.units == 'meters':
             depth = result.values
         boxes = [[d.box.x1, d.box.y1, d.box.x2-d.box.x1, d.box.y2-d.box.y1] for d in detections]
-        proposal = reconstruct_room(image, depth=depth, depth_units=result.units, boxes=boxes)
+        proposal = reconstruct_room(image, depth=depth, depth_units=result.units, boxes=boxes,
+                                    intrinsics=intrinsics, floor_region=floor_region)
         proposal = populate_room_proposal(proposal, detections, depth)
     except Exception:
         logger.exception('Optional geometry failed for one view; keeping furniture')
@@ -100,10 +106,12 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
         )
 
     h, w = image.shape[:2]
+    cache_key = compact_analysis_cache.key(image) if req.include_room and not req.include_artifacts else None
+    cached = compact_analysis_cache.get(cache_key) if cache_key is not None else None
 
     # 1. Furniture detection
     try:
-        detections = detect_furniture(image, include_artifacts=req.include_artifacts)
+        detections = cached[0] if cached else detect_furniture(image, include_artifacts=req.include_artifacts)
     except Exception as exc:
         logger.error(f"Inference error in /analyze: {exc}")
         raise HTTPException(
@@ -118,7 +126,9 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
     depth_warnings = []
     if req.include_depth or req.include_room:
         try:
-            depth_result = estimate_depth_result(image)
+            depth_result = cached[1] if cached else estimate_depth_result(image)
+            if cache_key is not None and not cached:
+                compact_analysis_cache.put(cache_key, detections, depth_result)
             depth_map = depth_result.values
             depth_warnings = depth_result.warnings
             if req.include_depth:
@@ -138,6 +148,7 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
             room_proposal = reconstruct_room(
                 image, depth=depth_map, depth_units=depth_result.units if depth_result else None,
                 boxes=furniture_boxes, intrinsics=req.intrinsics,
+                floor_region=req.floor_region,
             )
         except Exception:
             logger.exception("Room fitting failed; returning an unavailable proposal")
@@ -151,19 +162,20 @@ def analyze_room(req: AnalyzeRequest) -> AnalyzeResponse:
             logger.exception("Furniture projection failed; keeping the floor draft")
             room_proposal["warnings"].append("Furniture depth positions could not finish. Review the photo-based starting positions.")
 
-        try:
-            # Keep classical diagnostics for existing clients, but not the old
-            # image-border fallback polygon or any relative-depth dimensions.
-            room_estimate = estimate_room_boundaries(image)
-            room_estimate.pop("boundary_polygon", None)
-            vps = detect_vanishing_points(image)
-            room_estimate["vanishing_points"] = vps
-            room_estimate["reconstruction_method"] = room_proposal["method"]
-            if depth_map is not None:
-                room_estimate["depth_units"] = depth_result.units if depth_result else "unknown"
-        except Exception as exc:
-            logger.warning(f"Classical room diagnostics skipped due to error: {exc}")
-            room_estimate = None
+        if req.include_diagnostics:
+            try:
+                # Keep classical diagnostics for existing clients, but not the old
+                # image-border fallback polygon or any relative-depth dimensions.
+                room_estimate = estimate_room_boundaries(image)
+                room_estimate.pop("boundary_polygon", None)
+                vps = detect_vanishing_points(image)
+                room_estimate["vanishing_points"] = vps
+                room_estimate["reconstruction_method"] = room_proposal["method"]
+                if depth_map is not None:
+                    room_estimate["depth_units"] = depth_result.units if depth_result else "unknown"
+            except Exception as exc:
+                logger.warning(f"Classical room diagnostics skipped due to error: {exc}")
+                room_estimate = None
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 

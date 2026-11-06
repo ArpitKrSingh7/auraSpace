@@ -10,6 +10,7 @@ import numpy as np
 from pydantic import ValidationError
 
 from app.depth import DepthEstimate
+from app.analysis_cache import CompactAnalysisCache
 from app.preprocessing import encode_image
 from app.routes import analyze_room
 from app.schemas import AnalyzeRequest, BoundingBox, Detection
@@ -41,6 +42,31 @@ class ReconstructionRouteTests(unittest.TestCase):
         self.assertEqual(body["room_proposal"]["camera"]["source"], "provided")
         self.assertNotIn("boundary_polygon", body["room_estimate"])
         self.assertEqual(body["model_versions"]["depth"], "mock-depth-test")
+
+    def test_compact_web_scan_does_not_run_unused_classical_room_diagnostics(self):
+        with patch('app.routes.estimate_room_boundaries') as boundaries, patch('app.routes.detect_vanishing_points') as vanishing:
+            body, _ = self.request(include_diagnostics=False)
+        boundaries.assert_not_called()
+        vanishing.assert_not_called()
+        self.assertIsNone(body['room_estimate'])
+        self.assertEqual(body['room_proposal']['status'], 'estimated')
+
+    def test_repeated_compact_scan_reuses_inference_but_refits_changed_camera_and_floor(self):
+        arguments = dict(image=encode_image(self.image, fmt='png'), include_room=True, include_artifacts=False, include_diagnostics=False)
+        result = DepthEstimate(self.depth, 'meters', 'fixture', [])
+        with patch('app.routes.compact_analysis_cache', CompactAnalysisCache()), \
+                patch('app.routes.detect_furniture', return_value=[]) as detector, \
+                patch('app.routes.estimate_depth_result', return_value=result) as estimator:
+            first = analyze_room(AnalyzeRequest(**arguments, intrinsics=self.camera))
+            second = analyze_room(AnalyzeRequest(**arguments, intrinsics={**self.camera, 'fx': self.camera['fx']*2}, floor_region=[[100,145],[220,145],[220,180],[100,180]]))
+        detector.assert_called_once();estimator.assert_called_once()
+        self.assertAlmostEqual(second.room_proposal['widthM']/first.room_proposal['widthM'], .5, delta=.02)
+        self.assertEqual(second.room_proposal['fitting']['floorSelection'], 'user-region')
+
+    def test_reviewed_region_reaches_the_floor_fit(self):
+        body, _ = self.request(floor_region=[[100,145],[220,145],[220,180],[100,180]])
+        self.assertEqual(body['room_proposal']['fitting']['floorSelection'], 'user-region')
+        self.assertGreater(len(body['room_proposal']['floorSupport']['cells']), 100)
 
     def test_display_depth_and_raw_metric_artifact_can_accompany_geometry(self):
         body, _ = self.request(include_depth=True)

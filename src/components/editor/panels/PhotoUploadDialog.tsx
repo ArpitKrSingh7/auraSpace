@@ -8,6 +8,7 @@ import { Camera, Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { typeEmoji } from '../furniture-icons';
 import { RoomReconstructionReview } from './RoomReconstructionReview';
+import { storeOriginal } from '@/services/studio-storage';
 
 export function PhotoUploadDialog({
   onClose,
@@ -62,7 +63,7 @@ export function PhotoUploadDialog({
             img.onload = () => resolve(); img.onerror = () => reject(new Error('Unreadable image')); img.src = dataUri;
           });
           if (!img.naturalWidth || img.naturalWidth * img.naturalHeight > 20_000_000) throw new Error('Image too large');
-          // Store bounded previews so several phone photos fit browser storage.
+          // CV coordinates belong to this normalized preview, not the EXIF/raw file.
           const scale = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight));
           const canvas = document.createElement('canvas');
           canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
@@ -71,6 +72,10 @@ export function PhotoUploadDialog({
           context.drawImage(img, 0, 0, canvas.width, canvas.height);
           const photo: Photo = { id: `photo-${crypto.randomUUID()}`, uri: canvas.toDataURL('image/jpeg', .8),
             width: canvas.width, height: canvas.height, name: file.name, detections: [], analysisStatus: 'running' };
+          try {
+            await storeOriginal(photo.id, file);
+            photo.originalAssetId = photo.id;
+          } catch { addToast('The original photo could not be saved. The smaller working image is still available.', 'warning'); }
           photos.push(photo);
         } catch { skipped++; }
       }
@@ -229,32 +234,15 @@ export function PhotoUploadDialog({
 
       {!preview ? (
         <div className="space-y-4">
-          <section
-            aria-label="Room photo tips"
-            className="rounded-xl border border-brand-200 bg-brand-50/50 p-3"
-          >
-            <h3 className="text-xs font-semibold text-brand-800">
-              Get a better room draft
-            </h3>
-            <p className="mt-1 text-xs leading-relaxed text-surface-600">
-              One photo is enough to start. For a better draft, add 3–5 overlapping views while moving around the room. Keep some of the same furniture and floor visible in neighbouring photos.
-            </p>
-            <details className="mt-2 text-xs text-surface-600">
-              <summary className="cursor-pointer font-medium text-brand-700">
-                More photo tips
-              </summary>
-              <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
-                <li>Move a few steps between views; don’t only turn in one spot. Include floor and two adjoining walls where possible.</li>
-                <li>Use the normal 1× camera; avoid panoramas and ultra-wide shots.</li>
-                <li>Keep the phone level from side to side and avoid steep up/down angles.</li>
-                <li>Use good lighting and hold steady so floor and wall edges stay clear.</li>
-                <li>Measure a visible floor length, such as across a few tiles, to calibrate scale.</li>
-              </ul>
-              <p className="mt-2 leading-relaxed">
-                Blurry or difficult views stay available as references. You can continue with the photos you have; hidden walls and exact dimensions still need review.
-              </p>
-            </details>
-          </section>
+          <details className="rounded-xl bg-surface-50 p-3 text-sm text-surface-600">
+            <summary className="cursor-pointer font-medium">Tips for a better scan</summary>
+            <ul className="mt-3 list-disc space-y-2 pl-4">
+              <li>Use 3–5 overlapping views from different positions.</li>
+              <li>Include visible floor and shared furniture.</li>
+              <li>Use the normal 1× camera in good light.</li>
+              <li>A measured floor length helps calibrate size.</li>
+            </ul>
+          </details>
           <button
             type="button"
             className="w-full border-2 border-dashed border-surface-300 rounded-xl p-8 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-all"

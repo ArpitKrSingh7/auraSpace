@@ -14,6 +14,7 @@ export function parseRoomViewsResponse(raw: Record<string, unknown>, photos: Pho
     const detections = parseDetections(view.detections, size.width, size.height).map((d): Detection => ({
       ...d, box: [d.box[0] * photo.width / size.width, d.box[1] * photo.height / size.height,
         d.box[2] * photo.width / size.width, d.box[3] * photo.height / size.height],
+      ...(d.maskPolygon ? { maskPolygon: d.maskPolygon.map(([x, y]) => [x * photo.width / size.width, y * photo.height / size.height]) } : {}),
     }));
     return { photoId: photo.id, detections, analyzed: view.analyzed === true, size };
   });

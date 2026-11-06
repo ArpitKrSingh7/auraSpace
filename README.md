@@ -31,7 +31,7 @@ inside the room.
   detections, mark missed items, and enter room width/length in feet or metres.
   Overlapping views can share a floor frame; difficult views stay in a reference
   gallery and the best available view supplies the fallback draft.
-- **Image tools:** inspect grayscale, contrast and Sobel edges, and create
+- **Image tools:** inspect grayscale, contrast, Sobel edges, CLAHE, contours and RGB histograms, and create
   approximate furniture-removal previews.
 - **Save and compare:** keep alternative layouts in the browser, export an
   importable JSON project, download a dimensioned SVG plan or capture a PNG view.
@@ -84,7 +84,7 @@ AuraSpace combines three technical areas in one planning workflow:
 | --- | --- |
 | Web application | Next.js App Router, React, TypeScript, Tailwind CSS |
 | Interactive graphics | Three.js, React Three Fiber, Drei |
-| State and persistence | Zustand, browser local storage, JSON import/export |
+| State and persistence | Zustand, IndexedDB with localStorage fallback, JSON import/export |
 | Browser inference | TensorFlow.js and COCO-SSD |
 | Vision service | Python, FastAPI, NumPy, OpenCV, PyTorch, Torchvision, Transformers |
 | Pretrained models | Mask R-CNN ResNet50 FPN v2, Depth Anything V2 Metric Indoor Small, Big-LaMa |
@@ -190,9 +190,13 @@ behavior and reconstruction accuracy.
 - Room reconstruction produces a partial, approximate draft. Automatic
   door/window detection and ceiling/height recovery remain future work.
   Sparse multi-photo registration is experimental; dense reconstruction is absent.
-- Two-point floor calibration, reviewed removal masks, CLAHE, contours and
-  histogram inspection have backend/shared support but are not exposed by the
-  current web review screen. See [the implementation audit](AUDIT.md).
+- Two-point floor calibration and image inspection tools are exposed in the
+  website. Removal supports instance contours and paint/erase mask review.
+  Brush edits last for the current review session; the resulting preview is saved.
+  Floor evidence, boundary labels, rejection and a marked floor patch support
+  review/refitting. Calibrated camera values can be supplied per photo. Direct
+  wall/corner editing and lens-distortion correction remain unfinished.
+  See [the implementation audit](AUDIT.md).
 - Detector coverage is narrower than the furniture library. Unsupported items
   can be added manually with editable dimensions.
 - Removal synthesizes hidden surfaces. Use the original photograph for geometry
@@ -205,13 +209,24 @@ See [PLAN.md](PLAN.md) for implementation details and next priorities.
 
 ## Privacy and storage
 
-Projects and resized JPEG copies of imported photos are saved in the current
-browser; the upload flow does not retain the full-resolution original file or
-its camera metadata. Photos used for
-server-based AI analysis are sent to the backend for processing. The current
+Projects and normalized JPEG working images save in IndexedDB in the current
+browser. Existing localStorage saves migrate on opening the studio; the old
+snapshot remains as a migration backup. If IndexedDB is unavailable, limited
+localStorage saving remains available, with a visible warning on save failure.
+Original uploads are stored separately, byte-for-byte, and can be downloaded
+from photo review. Originals may contain camera/location metadata; that metadata
+is not used for reconstruction. CV coordinates refer to the normalized preview.
+Photos used for server-based AI analysis are sent to the backend for processing. The current
 website does not automatically publish rooms or provide a central gallery of
 uploaded projects. Clearing browser data can remove saved work. Exported JSON
-projects include any saved photos, so sharing a project file shares that content.
+projects include normalized photos and saved previews, so sharing a project file
+shares that content. Full-resolution originals are separate downloads, not part
+of the JSON export. Browser storage is device-local. Stale-tab saves are blocked
+rather than overwriting newer work; export unsaved changes before reloading.
+Automatic conflict merging and cloud backup are not implemented. The vision
+service may reuse compact detector/metric-depth results in a bounded memory
+cache for identical working images for up to 90 seconds; geometry is refitted
+for each request.
 
 ## Contributing
 

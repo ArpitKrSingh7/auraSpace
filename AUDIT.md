@@ -1,9 +1,97 @@
 # AuraSpace implementation and reconstruction audit
 
-Reviewed 5 November 2026 against the working tree, including the existing
+Reviewed 5–6 November 2026 against the working tree, including the existing
 uncommitted multi-photo implementation. This is a source, contract and regression
 audit; it is not a measured-room accuracy certification. Existing edits were
 preserved. No deployment, model replacement, training or cloud migration was done.
+
+## Follow-up implementation
+
+The findings below record the original audit. The subsequent local changes
+address these specific gaps:
+
+- Floor-reference point picking and validation are connected to the active
+  builder. Uniform calibration is saved with the proposal and survives JSON
+  export. Room dimension edits no longer rescale furniture or the other axis.
+- Geometry-only builds are allowed. Users can preserve observed arrangements,
+  correct detection categories and mark missing items from the full catalog.
+- CLAHE, contour inspection and per-channel RGB histograms are available in
+  the Analysis lab. Removal requires explicit object selection.
+- Nested mask payloads have typed validation; malformed inputs return 422.
+  Multi-photo registration rejects implausible accumulated scales.
+- Photo tips, calibration guidance and build semantics are expandable. Main
+  instructions are shorter and important guidance uses more readable text.
+
+- Rescans now associate same-image observations conservatively by category and
+  overlap, with ambiguity checks. Stable IDs are separate from current inference
+  indices. Manual corrections survive, and missed observations detach their
+  references without invalidating furniture, saved layouts or undo/export.
+- Moving, rotating, resizing, recoloring, duplicating or returning suggestions
+  to the tray protects those user edits on rebuild, independently of locking.
+- Instance contours reach the browser in source coordinates. The Analysis lab
+  offers paint/erase, brush undo/reset and a removal overlay. Reviewed masks pass
+  through the proxy to Python; browser composition also enforces the reviewed
+  selection, even if a service returns a larger mask. Offline fill honors it too.
+- IndexedDB replaces synchronous full-studio localStorage writes. Saves serialize
+  in order and only changed projects are written; project metadata/deletions
+  commit atomically. Boot waits for migration/recovery. Original upload bytes
+  are separate downloadable blobs; normalized previews remain the CV coordinate
+  space. Deleting the last reference removes the original. One corrupt room or
+  settings record no longer hides all other rooms; failed saves remain visible.
+
+- Floor review now shows bounded source-pixel support samples (including gaps
+  around excluded furniture) and distinguishes supported walls from unknown
+  boundaries. Users can reject estimated geometry or mark a convex visible floor
+  patch to guide reanalysis. This guides the fit; it is not semantic segmentation
+  or free-form wall/corner editing. Scale references must land on floor evidence
+  when the service supplies it.
+- Per-photo calibrated pinhole values reach both single and multi-view analysis,
+  with exact x/y resize mapping. Existing assumptions remain the default unless
+  calibrated values are supplied. Distortion/crop/EXIF calibration is not solved.
+- Furniture priors and multi-view fusion no longer expand supported anchor walls.
+  Preserving the photo arrangement retains out-of-room poses for correction,
+  instead of quietly clamping them into a plausible-looking arrangement.
+- Furniture projection rasterizes instance ROIs on the original sample lattice.
+  A 1280×960 synthetic scene with 12 instances, 15 iterations and one BLAS thread
+  measured median projection time 11.41 → 3.70 ms and tracked peak allocation
+  2,549,000 → 232,148 bytes. Projected geometry matched to 1e-10. This benchmark
+  covers projection only, not model inference or end-to-end reconstruction.
+- Compact scans skip unused classical diagnostics. A 32 MiB accounted RAM cache
+  reuses compact detector/metric-depth results for identical decoded pixels for
+  up to 90 seconds. Geometry always refits with current camera/floor inputs.
+  Heuristic maps, failures, large entries and encoded mask artifacts are excluded.
+- Brush review uses bounded canvases, compositing and animation-frame updates,
+  eliminating the full-image JavaScript pixel recoloring loop on every movement.
+  IndexedDB revisions now reject stale-tab saves with an export/reload message.
+
+Remaining work includes direct wall/corner editing and irregular room shells,
+per-axis furniture evidence, full pose-graph consistency, automatic camera
+calibration/distortion handling, height/opening recovery and measured-room
+validation. Instance contours are simplified (holes
+are not reconstructed); brush corrections last for the current review session.
+Conservative observation matching can leave both an older item and a new
+suggestion when identity is ambiguous; review still matters. Storage is
+browser-local; stale-tab overwrites are blocked, but conflicts are not merged. Original bytes are kept
+for new uploads only; previously discarded originals cannot be recovered. Calibration validation
+uses the proposed floor extent; semantic verification that selected points
+really lie on floor remains the user's responsibility. Undo restores room/items;
+the saved calibration reference remains photo evidence.
+
+Validation: 123 JavaScript tests, 87 Python tests and production build passed.
+Chromium at 1440 px and 390 px passed reference-point calibration, build,
+undo/redo, selected removal and CLAHE/contour/histogram controls. Image-service
+responses were mocked for browser verification; Python route tests exercise
+the real classical operations. Follow-up Chromium checks at both widths passed
+IndexedDB migration/reload, idempotent rebuilding, exact original download,
+contour/erase requests and pixel preservation outside the reviewed mask.
+Deletion/reload and original-blob cleanup passed. Injected quota errors verified
+transaction rollback, persistent save warnings and successful retry in IndexedDB
+and localStorage fallback; a real test PNG upload retained its exact bytes.
+Floor marking, camera submission, geometry rejection and mask rendering passed
+at 1440 px and 390 px; cross-tab overwrite rejection also passed.
+All workspace TypeScript checks passed. These browser checks used isolated test
+rooms and mocked image-service responses, not measured room captures.
+No commit or push was performed for these follow-up changes.
 
 ## Assessment
 

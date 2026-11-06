@@ -62,3 +62,11 @@ class TestRoutes(unittest.TestCase):
         with patch('app.routes.detect_furniture',return_value=[]):
             response=self.client.post('/analyze',json={'image':encode_image(pixels,fmt='png'),'include_room':True})
         self.assertEqual(response.status_code,200,response.text)
+
+
+class MaskValidationTests(unittest.TestCase):
+    def test_malformed_nested_masks_return_validation_errors(self):
+        client = TestClient(app)
+        for mask in [{'polygons': ['bad']}, {'strokes': [None]}, {'strokes': [{'tool':'paint','radius':'bad','points':[[1,2]]}]}, {'box':[0,0,-1,10]}, {'expansionPx': 'bad'}]:
+            response = client.post('/inpaint', json={'image':'placeholder', 'masks':[mask]})
+            self.assertEqual(response.status_code,422,response.text)

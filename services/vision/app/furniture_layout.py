@@ -29,11 +29,20 @@ def populate_room_proposal(proposal: dict[str, Any], detections, depth: np.ndarr
         polygon = np.asarray(detection.mask_polygon, dtype=np.float64)
         if polygon.ndim != 2 or polygon.shape[0] < 3 or polygon.shape[1] != 2:
             continue
-        mask = np.zeros((height, width), dtype=np.uint8)
-        cv2.fillPoly(mask, [np.round(polygon).astype(np.int32)], 1)
+        if not np.isfinite(polygon).all():
+            continue
+        left, top = np.maximum(np.floor(polygon.min(axis=0)), [0, 0]).astype(int)
+        right, bottom = np.minimum(np.ceil(polygon.max(axis=0)) + 1, [width, height]).astype(int)
+        if right <= left or bottom <= top:
+            continue
+        # Allocate only the instance ROI. Keep the same globally aligned sample
+        # lattice so cropping changes cost, not the projected geometry.
+        mask = np.zeros((bottom - top, right - left), dtype=np.uint8)
+        cv2.fillPoly(mask, [np.round(polygon - [left, top]).astype(np.int32)], 1)
         step = max(2, math.ceil(math.sqrt(max(int(mask.sum()), 1) / 2000)))
-        v, u = np.where(mask[::step, ::step] > 0)
-        v, u = v * step, u * step
+        dy, dx = (-top) % step, (-left) % step
+        v, u = np.where(mask[dy::step, dx::step] > 0)
+        v, u = v * step + top + dy, u * step + left + dx
         z = depth[v, u]
         points = np.column_stack(((u - camera["cx"]) * z / camera["fx"],
                                   (v - camera["cy"]) * z / camera["fy"], z))
@@ -68,12 +77,23 @@ def populate_room_proposal(proposal: dict[str, Any], detections, depth: np.ndarr
 
     lower = np.array([0., 0.])
     upper = np.array([proposal["widthM"], proposal["depthM"]])
+    edges = proposal.get("boundaryEdges", ["view-limit"] * 4)
     for item in furniture:
         angle = math.radians(item["rotationDeg"])
         half = np.array([abs(math.cos(angle)) * item["widthM"] + abs(math.sin(angle)) * item["depthM"],
                          abs(math.sin(angle)) * item["widthM"] + abs(math.cos(angle)) * item["depthM"]]) / 2
         lower = np.minimum(lower, np.asarray(item["centerXZ"]) - half - .06)
         upper = np.maximum(upper, np.asarray(item["centerXZ"]) + half + .06)
+    unconstrained = upper - lower
+    if not np.isfinite(unconstrained).all() or unconstrained.max() > 30:
+        return proposal
+    # No furniture prior can move a supported structural wall. Keep the pose
+    # available for review instead of enlarging the room to conceal a conflict.
+    for axis, low_edge, high_edge in [(0, 3, 1), (1, 0, 2)]:
+        if edges[low_edge] == "observed-wall":
+            lower[axis] = 0
+        if edges[high_edge] == "observed-wall":
+            upper[axis] = [proposal["widthM"], proposal["depthM"]][axis]
     size = upper - lower
     if not np.isfinite(size).all() or size.max() > 30:
         return proposal

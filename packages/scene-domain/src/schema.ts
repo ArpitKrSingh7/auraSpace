@@ -27,6 +27,10 @@ export const color = z.string().regex(/^#[a-f0-9]{6}$/i);
 export const point = z
   .tuple([finite, finite])
   .transform(([x, z]): [number, number] => [x, z]);
+export const roomPhotoHintsSchema = z.object({
+  floorRegionPx: z.array(point).length(4).optional(),
+  intrinsics: z.object({ fx: finite.positive().max(1_000_000), fy: finite.positive().max(1_000_000), cx: finite, cy: finite }).optional(),
+});
 export const reconstructionOpeningSchema = z.object({
   id,
   kind: z.literal('unclassified'),
@@ -46,6 +50,13 @@ const reconstructionProposal = z.object({
   partial: z.boolean(),
   confidence: z.enum(['low', 'medium']),
   floorCornersPx: z.array(point).max(4).default([]),
+  geometryRejected: z.boolean().optional(),
+  floorSupport: z.object({
+    columns: z.number().int().min(1).max(16384), rows: z.number().int().min(1).max(16384),
+    originPx: point, stepPx: z.tuple([finite.positive(), finite.positive()]),
+    cells: z.array(z.number().int().nonnegative()).max(10000),
+  }).refine((s) => s.columns * s.rows <= 10000 && s.cells.every((i) => i < s.columns * s.rows), 'Invalid floor support grid').optional(),
+  scaleAnchor: z.object({ pointsPx: z.tuple([point, point]), lengthM: finite.positive().max(100) }).optional(),
   floorPolygonXZ: z.array(point).min(3).max(64).optional(),
   widthM: finite.positive().max(100).optional(),
   depthM: finite.positive().max(100).optional(),
@@ -444,6 +455,10 @@ export function roomReconstructionImageIssues(proposal: RoomReconstructionPropos
     issues.push('Room floor image coordinates extend outside the source photograph');
   if (proposal.openings?.some(({ boxPx: [x, y, w, h] }) => x + w > width || y + h > height))
     issues.push('Opening image coordinates extend outside the source photograph');
+  const support = proposal.floorSupport;
+  if (support && (support.originPx.some((v) => v < 0) || support.originPx[0] + (support.columns - 1) * support.stepPx[0] > width ||
+      support.originPx[1] + (support.rows - 1) * support.stepPx[1] > height))
+    issues.push('Floor support samples extend outside the source photograph');
   return issues;
 }
 export type Observation = z.infer<typeof observationSchema>;

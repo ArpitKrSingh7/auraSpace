@@ -28,8 +28,10 @@ function fixture(withDepth = true) {
 }
 
 test('a photo builds a furnished room with two distinct beds, a desk and a chair', () => {
-  const project = fixture(), before = structuredClone(project);
-  const result = buildPhotoLayout(project, 'room-photo', { widthM: 3.048, depthM: 3.048 });
+  const project = fixture();
+  project.photos[0].roomProposal.imageToFloor = [.01,0,0,0,.01,0,0,0,1];
+  const before = structuredClone(project);
+  const result = buildPhotoLayout(project, 'room-photo', { widthM: 3.048, depthM: 3.048, scaleAnchor: { pointsPx: [[100,100],[300,100]], lengthM: 1.016 } });
   assert.deepEqual(project, before);
   assert.equal(result.added.length, 4);
   assert.equal(result.projectedCount, 4);
@@ -54,12 +56,12 @@ test('missing floor evidence still produces a labelled image-composition startin
   assert.ok(result.added.every((i) => i.placed));
 });
 
-test('one known room axis calibrates the other estimate without marking it as measured', () => {
+test('one room measurement changes only that boundary, without stretching the other axis', () => {
   const result = buildPhotoLayout(fixture(), 'room-photo', { widthM: 3.048 });
   assert.equal(result.room.width, 3.048);
-  assert.equal(result.room.depth, 3.048);
+  assert.equal(result.room.depth, 6);
   assert.equal(result.room.dimensionSources.width, 'user-measured');
-  assert.equal(result.room.dimensionSources.depth, 'calibrated-estimate');
+  assert.equal(result.room.dimensionSources.depth, 'model-estimated');
 });
 
 test('review removes a conflicting table label without merging two separate beds', () => {
@@ -125,9 +127,10 @@ test('project exports retain furniture poses and detection colors', () => {
   assert.equal(imported.photos[0].detections[0].color, '#b8a1bb');
 });
 
-test('invalid sizes and an empty selection do not produce a misleading draft', () => {
-  for (const options of [{ widthM: NaN }, { widthM: .5 }, { selectedIds: [] }])
+test('invalid sizes are rejected and empty selection permits a geometry-only draft', () => {
+  for (const options of [{ widthM: NaN }, { widthM: .5 }])
     assert.throws(() => buildPhotoLayout(fixture(), 'room-photo', options));
+  assert.equal(buildPhotoLayout(fixture(), 'room-photo', { selectedIds: [] }).added.length, 0);
 });
 
 test('applying a furnished photo draft is one undoable room-and-items operation', () => {
@@ -144,4 +147,29 @@ test('applying a furnished photo draft is one undoable room-and-items operation'
   assert.deepEqual(store().activeProject().room, before.room);
   store().redo();
   assert.equal(store().activeProject().items.length, 4);
+});
+
+ test('room dimensions do not shear rotated furniture; a measured floor reference scales uniformly', () => {
+  const p = fixture();
+  p.photos[0].roomProposal.imageToFloor = [.01,0,0,0,.01,0,0,0,1];
+  const options = {selectedIds: ['det-3'], preserveObservedPoses: true};
+  const a = buildPhotoLayout(p, 'room-photo', options).added[0];
+  const b = buildPhotoLayout(p, 'room-photo', {...options, widthM: 12, depthM: 8}).added[0];
+  assert.deepEqual([a.width,a.depth,a.height,a.rotation], [b.width,b.depth,b.height,b.rotation]);
+  const result = buildPhotoLayout(p, 'room-photo', {...options, scaleAnchor: {pointsPx:[[100,100],[300,100]],lengthM:1}});
+  assert.equal(result.room.width, 3);
+  assert.equal(result.room.dimensionSources.width, 'calibrated-estimate');
+  for (const pointsPx of [[[100,100],[100,100]], [[800,100],[900,100]]])
+    assert.throws(() => buildPhotoLayout(p, 'room-photo', {...options,scaleAnchor:{pointsPx,lengthM:1}}));
+ });
+
+test('floor calibration survives build and portable export', () => {
+ const p = fixture();
+ p.photos[0].roomProposal.imageToFloor = [.01,0,0,0,.01,0,0,0,1];
+ useAppStore.setState({projects:[p], activeProjectId:p.id,history:[],historyIndex:-1});
+ const scaleAnchor={pointsPx:[[100,100],[300,100]],lengthM:1};
+ useAppStore.getState().buildRoomFromPhoto('room-photo',{scaleAnchor});
+ const restored=parseProjectJson(exportProjectJson(useAppStore.getState().activeProject()));
+ assert.deepEqual(restored.photos[0].roomProposal.scaleAnchor,scaleAnchor);
+ assert.equal(buildPhotoLayout(restored,'room-photo').scaleAnchor.lengthM,1);
 });

@@ -2,7 +2,9 @@
 
 import { Dialog } from '@/components/ui/Dialog';
 import type { Detection, Photo } from '@/domain/types';
-import { processPhoto, removeFurniture } from '@/services/vision.web';
+import { inspectPhoto, processPhoto, removeFurniture } from '@/services/vision.web';
+import { selectedRemovalMask, type MaskStroke } from '@/services/removal-mask';
+import { RemovalMaskEditor } from './RemovalMaskEditor';
 import {
   Activity,
   Box,
@@ -141,12 +143,17 @@ export function AnalysisInspector({
 }: AnalysisInspectorProps) {
   const [activeTab, setActiveTab] = useState<'ip' | 'cv' | 'cg'>('ip');
   const [ipOperation, setIpOperation] = useState<
-    'original' | 'grayscale' | 'contrast' | 'edges' | 'inpainted'
+    'original' | 'grayscale' | 'contrast' | 'edges' | 'inpainted' | 'clahe' | 'contours' | 'histogram'
   >('original');
   const [processedUri, setProcessedUri] = useState<string | null>(null);
   const [sliderPos, setSliderPos] = useState(50);
   const [processingError, setProcessingError] = useState('');
   const [removalMethod, setRemovalMethod] = useState('');
+  const [histogram, setHistogram] = useState<Record<string, number[]> | undefined>();
+  const [removalIds, setRemovalIds] = useState<string[]>([]);
+  const [maskStrokes, setMaskStrokes] = useState<MaskStroke[]>([]);
+  const removalMask = useMemo(() => selectedRemovalMask(photo?.detections.filter((d) => removalIds.includes(d.id)) ?? [], maskStrokes), [photo?.detections, removalIds, maskStrokes]);
+  useEffect(() => { setRemovalIds([]); setMaskStrokes([]); setIpOperation('original'); }, [photo?.id]);
   const previewCallback = useRef(onInpaintPreview);
   previewCallback.current = onInpaintPreview;
 
@@ -159,6 +166,7 @@ export function AnalysisInspector({
     setProcessedUri(null);
     setProcessingError('');
     setRemovalMethod('');
+    setHistogram(undefined);
     if (ipOperation === 'original') return;
     const input: Photo = photo ?? {
       id: 'illustration',
@@ -172,12 +180,15 @@ export function AnalysisInspector({
     (async () => {
       try {
         const result = ipOperation === 'inpainted'
-          ? await removeFurniture(input, input.detections)
+          ? await removeFurniture(input, input.detections.filter((d) => removalIds.includes(d.id)), undefined, removalMask)
+          : ipOperation === 'clahe' || ipOperation === 'contours' || ipOperation === 'histogram'
+          ? { ...await inspectPhoto(input, ipOperation), method: '' }
           : { uri: await processPhoto(input, ipOperation), method: '' };
         const { uri } = result;
         if (cancelled) return;
         setProcessedUri(uri);
         setRemovalMethod(result.method);
+        if ('metadata' in result) setHistogram((result.metadata as { histogram?: Record<string, number[]> } | undefined)?.histogram);
         if (ipOperation === 'inpainted' && photo)
           previewCallback.current?.(uri);
       } catch (error) {
@@ -199,6 +210,8 @@ export function AnalysisInspector({
     photo?.width,
     photo?.height,
     photo?.detections,
+    removalIds,
+    removalMask,
   ]);
 
   return (
@@ -252,12 +265,20 @@ export function AnalysisInspector({
           {removalMethod && <p role="status" className="rounded-xl bg-surface-50 p-3 text-xs text-surface-600">
             Removal method: {removalMethod}. Hidden surfaces are synthesized; use the source photo and measurements for room geometry.
           </p>}
+          {activeTab === 'ip' && photo && <fieldset className="text-sm space-y-2"><legend className="font-semibold">Furniture to remove</legend>{photo.detections.map((d) => <label key={d.id} className="flex gap-2"><input type="checkbox" checked={removalIds.includes(d.id)} onChange={() => { setIpOperation('original'); setMaskStrokes([]); setRemovalIds((ids) => ids.includes(d.id) ? ids.filter((id) => id !== d.id) : [...ids, d.id]); }} />{d.label}</label>)}</fieldset>}
+          {activeTab === 'ip' && photo && <details className="text-sm"><summary className="cursor-pointer font-medium">Review removal mask</summary><div className="mt-3"><RemovalMaskEditor photo={photo} mask={removalMask} onChange={(strokes) => { setIpOperation('original'); setMaskStrokes(strokes); }} /></div></details>}
+          {histogram && <svg viewBox="0 0 256 100" role="img" aria-label="Source image RGB histogram" className="h-32 w-full">{(['red', 'green', 'blue'] as const).map((channel) => {
+            const values = histogram[channel];
+            if (!Array.isArray(values) || values.length !== 256 || !values.every((v) => Number.isFinite(v) && v >= 0)) return null;
+            const peak = Math.max(1, ...values);
+            return <polyline key={channel} points={values.map((v, i) => `${i},${100-v/peak*95}`).join(' ')} stroke={channel} fill="none" strokeWidth="1" />;
+          })}</svg>}
           {activeTab === 'ip' && (
             <div className="space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">
-                    Classical Pixel & Filter Pipelines
+                    Photo tools
                   </h3>
                   <p className="text-xs text-surface-500">
                     Inspect pixel intensities, contrast and image gradients
@@ -267,9 +288,12 @@ export function AnalysisInspector({
                   {(
                     [
                       { id: 'original', label: 'Original' },
-                      { id: 'grayscale', label: 'Grayscale (BT.601)' },
+                      { id: 'grayscale', label: 'Grayscale' },
                       { id: 'contrast', label: 'Contrast' },
                       { id: 'edges', label: 'Sobel edges' },
+                      { id: 'clahe', label: 'CLAHE' },
+                      { id: 'contours', label: 'Contours' },
+                      { id: 'histogram', label: 'Histogram' },
                       { id: 'inpainted', label: 'Furniture Removal' },
                     ] as const
                   ).map((btn) => (
@@ -331,7 +355,8 @@ export function AnalysisInspector({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <details className="text-sm text-surface-600"><summary className="cursor-pointer">How these tools work</summary>
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div className="card p-4 space-y-1.5">
                   <span className="font-semibold text-brand-700">
                     Luminance Grayscale
@@ -365,6 +390,7 @@ export function AnalysisInspector({
                   </p>
                 </div>
               </div>
+              </details>
             </div>
           )}
 
@@ -566,7 +592,7 @@ hit = ray.intersectPlane(floorPlane)`}
         </div>
 
         <div className="bg-surface-50 border-t border-surface-200 px-6 py-3.5 flex justify-between items-center text-xs text-surface-500">
-          <span>Project: AuraSpace Studio · Course: ICG Lab</span>
+          <span>Source photo stays unchanged</span>
           <button
             className="btn-secondary text-xs py-1.5 px-4"
             onClick={onClose}

@@ -83,6 +83,10 @@ export function parseDetections(
     return [
       {
         id: typeof d.id === 'string' ? d.id.slice(0, 100) : `det-${i}`,
+        analysisIndex: i,
+        ...(Array.isArray(d.mask_polygon) && d.mask_polygon.length >= 3 && d.mask_polygon.length <= 1000 &&
+          d.mask_polygon.every((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite) && p[0] >= 0 && p[0] <= width && p[1] >= 0 && p[1] <= height)
+          ? { maskPolygon: d.mask_polygon as [number, number][] } : {}),
         label,
         type,
         score,

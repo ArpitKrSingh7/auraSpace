@@ -18,9 +18,11 @@ import type {
 import { getItemElevation, getRoomOpenings, roomOpeningToCanonical, validatePlacement } from '../../domain/geometry';
 import { getOpeningLeaf } from '@auraspace/scene-domain';
 import { FurnitureModel } from './FurnitureModel';
+import { attachToWall, nearestWall, placementPose, type PlacementPose, type WallSide } from '../../domain/placement';
+import { placementFromRay, wallPoint } from './placement-ray';
 
 const FLOOR = new Plane(new Vector3(0, 1, 0), 0);
-type PointerCapture = { pointerId: number; target: { releasePointerCapture?: (id: number) => void } };
+type PointerCapture = { pointerId: number; target: { setPointerCapture?: (id: number) => void; releasePointerCapture?: (id: number) => void } };
 function releaseCapture(capture?: PointerCapture) {
   // Keep the original event target: releasing from a bubbling parent leaves
   // Fiber's captured object registered and steals subsequent room clicks.
@@ -204,12 +206,14 @@ function Wall({
   height,
   onOpeningSelect,
   selectedOpeningId,
+  placing = false,
 }: {
   room: Room;
   side: Room['door']['wall'];
   height: number;
   onOpeningSelect?: (id: string) => void;
   selectedOpeningId?: string | null;
+  placing?: boolean;
 }) {
   const horizontal = side === 'front' || side === 'back';
   const length = horizontal ? room.width : room.depth;
@@ -291,10 +295,11 @@ function Wall({
         const frameColor = opening.id === selectedOpeningId ? '#8db5a5' : opening.kind === 'door' ? '#c9af8d' : '#edf3ee';
         return (
           <group key={opening.id} name={`opening-${opening.id}`} position={[leaf.center[0], sill + h / 2, leaf.center[1]]} rotation={[0, leaf.yawRad, 0]}
-            onPointerDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => { if (!placing) event.stopPropagation(); }}
             onClick={(event) => {
+              if (placing) return;
               event.stopPropagation();
-              if (event.delta <= 5) onOpeningSelect?.(opening.id);
+              if (event.button === 0 && event.delta <= 5) onOpeningSelect?.(opening.id);
             }}>
             {opening.kind === 'door' || height < 0.1 ? <>
               <Solid at={[0, 0, 0]} size={[leaf.widthM, h, 0.04]} color={frameColor} />
@@ -453,9 +458,10 @@ export function SceneWorld(props: SceneWorldProps) {
     x: number;
     z: number;
     rotation?: number;
+    elevationM?: number;
   } | null>(null);
   const rotationDrag = useRef<{ id: string; startAngle: number; startRotation: number; rotation: number; elevationM: number; capture: PointerCapture } | null>(null);
-  const [hover, setHover] = useState({ x: room.width / 2, z: room.depth / 2 });
+  const [hover, setHover] = useState<PlacementPose | null>(null);
   const drag = useRef<{
     id: string;
     dx: number;
@@ -464,9 +470,49 @@ export function SceneWorld(props: SceneWorldProps) {
     x: number;
     z: number;
     elevationM: number;
+    dy: number;
+    wall?: WallSide;
+    startX: number;
+    startY: number;
+    threshold: number;
+    pose?: PlacementPose;
     capture: PointerCapture;
   } | null>(null);
-  const { invalidate } = useThree();
+  const { invalidate, gl } = useThree();
+  const cancelGesture = () => {
+    const oldDrag = drag.current, oldRotation = rotationDrag.current;
+    drag.current = null; rotationDrag.current = null;
+    releaseCapture(oldDrag?.capture); releaseCapture(oldRotation?.capture);
+    roomPointer.current = false; setPreview(null); onInteractionChange?.(false);
+    gl.domElement.style.cursor = '';
+  };
+  useEffect(() => {
+    const cancel = () => cancelGesture();
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') cancelGesture(); };
+    const lost = (e: PointerEvent) => {
+      const capture = drag.current?.capture ?? rotationDrag.current?.capture;
+      if (capture?.pointerId === e.pointerId) cancelGesture();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('blur', cancel);
+      window.addEventListener('keydown', escape);
+    }
+    // Fiber clears hover on pointercancel without dispatching it through meshes.
+    // Listen on the canvas as well so cancelled touch gestures never commit later.
+    gl.domElement.addEventListener('pointercancel', lost);
+    gl.domElement.addEventListener('lostpointercapture', lost);
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('blur', cancel);
+        window.removeEventListener('keydown', escape);
+      }
+      gl.domElement.removeEventListener('pointercancel', lost);
+      gl.domElement.removeEventListener('lostpointercapture', lost);
+      releaseCapture(drag.current?.capture); releaseCapture(rotationDrag.current?.capture);
+      onInteractionChange?.(false);
+    };
+  }, [gl, onInteractionChange]);
+  useEffect(() => { setHover(null); }, [placing?.id, placing?.mounting, mode]);
   useEffect(() => {
     releaseCapture(drag.current?.capture);
     releaseCapture(rotationDrag.current?.capture);
@@ -478,58 +524,38 @@ export function SceneWorld(props: SceneWorldProps) {
 
   const point = (e: ThreeEvent<PointerEvent>, elevationM = 0) =>
     e.ray.intersectPlane(elevationM ? new Plane(new Vector3(0, 1, 0), -elevationM) : FLOOR, new Vector3());
-  const candidate = (item: FurnitureItem, x: number, z: number) => {
-    const theta = MathUtils.degToRad(item.rotation),
-      halfX =
-        (Math.abs(Math.cos(theta)) * item.width) / 2 +
-        (Math.abs(Math.sin(theta)) * item.depth) / 2;
-    const halfZ =
-      (Math.abs(Math.sin(theta)) * item.width) / 2 +
-      (Math.abs(Math.cos(theta)) * item.depth) / 2;
-    const nx = snap ? Math.round(x * 10) / 10 : x,
-      nz = snap ? Math.round(z * 10) / 10 : z;
-    return {
-      x:
-        halfX <= room.width / 2
-          ? Math.max(halfX, Math.min(room.width - halfX, nx))
-          : room.width / 2,
-      z:
-        halfZ <= room.depth / 2
-          ? Math.max(halfZ, Math.min(room.depth - halfZ, nz))
-          : room.depth / 2,
-    };
-  };
   const down = (item: FurnitureItem, e: ThreeEvent<PointerEvent>) => {
+    if (placing || e.button !== 0 || drag.current || rotationDrag.current) return;
     e.stopPropagation();
     roomPointer.current = false;
     onSelect(item.id);
-    if (placing || item.locked || e.button !== 0) return;
+    if (item.locked) return;
     const elevationM = getItemElevation(item, room.height);
-    const p = point(e, elevationM);
+    const wall = item.mounting === 'wall' && mode !== 'plan' ? nearestWall(item.x, item.z, room) : undefined;
+    const p = wall ? wallPoint(e.ray, room, wall, item.depth / 2) : point(e, elevationM);
     if (!p) return;
     drag.current = {
-      id: item.id,
-      dx: item.x - p.x,
-      dz: item.z - p.z,
-      moved: false,
-      x: item.x,
-      z: item.z,
-      elevationM,
+      id: item.id, dx: item.x - p.x, dz: item.z - p.z, dy: elevationM - p.y,
+      moved: false, x: item.x, z: item.z, elevationM, wall,
+      startX: e.clientX, startY: e.clientY, threshold: e.pointerType === 'touch' ? 8 : 5,
       capture: { pointerId: e.pointerId, target: e.target as unknown as PointerCapture['target'] },
     };
     onInteractionChange?.(true);
-    (
-      e.target as unknown as { setPointerCapture?: (id: number) => void }
-    ).setPointerCapture?.(e.pointerId);
+    gl.domElement.style.cursor = 'grabbing';
+    (e.target as unknown as PointerCapture['target']).setPointerCapture?.(e.pointerId);
   };
   const move = (e: ThreeEvent<PointerEvent>) => {
-    const p = point(e, rotationDrag.current?.elevationM ?? drag.current?.elevationM ?? 0);
-    if (!p) return;
+    if (placing) {
+      setHover(placementFromRay(e.ray, placing, room, mode, snap));
+      return;
+    }
     if (rotationDrag.current) {
-      e.stopPropagation();
       const gesture = rotationDrag.current;
+      if (gesture.capture.pointerId !== e.pointerId) return;
+      e.stopPropagation();
+      const p = point(e, gesture.elevationM);
       const item = project.items.find((candidate) => candidate.id === gesture.id);
-      if (!item || Math.hypot(p.x - item.x, p.z - item.z) < 0.05) return;
+      if (!p || !item || Math.hypot(p.x - item.x, p.z - item.z) < 0.05) return;
       const angle = Math.atan2(p.z - item.z, p.x - item.x);
       const delta = Math.atan2(Math.sin(angle - gesture.startAngle), Math.cos(angle - gesture.startAngle));
       gesture.rotation = ((Math.round(gesture.startRotation + MathUtils.radToDeg(delta)) % 360) + 360) % 360;
@@ -537,25 +563,27 @@ export function SceneWorld(props: SceneWorldProps) {
       invalidate();
       return;
     }
-    if (placing) {
-      setHover(candidate(placing, p.x, p.z));
-      return;
-    }
-    if (!drag.current) return;
+    const gesture = drag.current;
+    if (!gesture || gesture.capture.pointerId !== e.pointerId) return;
     e.stopPropagation();
-    const item = project.items.find((i) => i.id === drag.current!.id);
+    if (!gesture.moved && Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY) < gesture.threshold) return;
+    const item = project.items.find((i) => i.id === gesture.id);
     if (!item) return;
-    const pos = candidate(item, p.x + drag.current.dx, p.z + drag.current.dz);
-    drag.current.moved ||= Math.hypot(pos.x - item.x, pos.z - item.z) > 0.015;
-    drag.current.x = pos.x;
-    drag.current.z = pos.z;
-    setPreview({ id: item.id, ...pos });
+    const p = gesture.wall ? wallPoint(e.ray, room, gesture.wall, item.depth / 2) : point(e, gesture.elevationM);
+    if (!p) return;
+    const pose = gesture.wall
+      ? attachToWall(item, room, gesture.wall, p.x + gesture.dx, p.z + gesture.dz, p.y + gesture.dy, snap)
+      : placementPose(item, room, p.x + gesture.dx, p.z + gesture.dz, snap);
+    gesture.moved = true;
+    gesture.pose = pose;
+    setPreview({ id: item.id, ...pose });
     invalidate();
   };
   const up = (e: ThreeEvent<PointerEvent>) => {
     if (rotationDrag.current) {
-      e.stopPropagation();
       const gesture = rotationDrag.current;
+      if (gesture.capture.pointerId !== e.pointerId) return;
+      e.stopPropagation();
       rotationDrag.current = null;
       releaseCapture(gesture.capture);
       if (gesture.rotation !== gesture.startRotation) onRotate?.(gesture.id, gesture.rotation);
@@ -563,12 +591,13 @@ export function SceneWorld(props: SceneWorldProps) {
       onInteractionChange?.(false);
       return;
     }
-    if (!drag.current) return;
+    if (!drag.current || drag.current.capture.pointerId !== e.pointerId) return;
     e.stopPropagation();
     const d = drag.current;
     drag.current = null;
     releaseCapture(d.capture);
-    if (d.moved) onMove(d.id, d.x, d.z);
+    if (d.moved && d.pose) onMove(d.id, d.pose.x, d.pose.z, d.pose);
+    gl.domElement.style.cursor = '';
     setPreview(null);
     onInteractionChange?.(false);
   };
@@ -577,13 +606,15 @@ export function SceneWorld(props: SceneWorldProps) {
     <group
       onPointerMove={move}
       onPointerUp={up}
-      onPointerCancel={() => {
-        releaseCapture(drag.current?.capture);
-        releaseCapture(rotationDrag.current?.capture);
-        drag.current = null;
-        rotationDrag.current = null;
-        setPreview(null);
-        onInteractionChange?.(false);
+      onPointerCancel={cancelGesture}
+      onPointerDown={(e) => { if (placing && e.button === 0) roomPointer.current = true; }}
+      onClick={(e) => {
+        if (!placing || e.button !== 0) return;
+        e.stopPropagation();
+        if (e.delta > 5 || !roomPointer.current) return;
+        roomPointer.current = false;
+        const pose = placementFromRay(e.ray, placing, room, mode, snap);
+        if (pose) onPlace?.(pose.x, pose.z, pose);
       }}
     >
       <ambientLight intensity={0.9} />
@@ -602,12 +633,14 @@ export function SceneWorld(props: SceneWorldProps) {
       />
       <group name="room-surfaces"
         onPointerDown={(event) => {
-          event.stopPropagation();
+          if (event.button !== 0) return;
+          if (!placing) event.stopPropagation();
           roomPointer.current = true;
         }}
         onClick={(event) => {
+          if (placing) return;
           event.stopPropagation();
-          if (event.delta <= 5 && roomPointer.current && !placing) onSelect(null);
+          if (event.button === 0 && event.delta <= 5 && roomPointer.current && !placing) onSelect(null);
         }}>
       <Solid
         at={[room.width / 2, -0.105, room.depth / 2]}
@@ -619,15 +652,11 @@ export function SceneWorld(props: SceneWorldProps) {
         position={[room.width / 2, 0, room.depth / 2]}
         receiveShadow
         onClick={(e) => {
+          if (placing) return;
           e.stopPropagation();
-          if (e.delta > 5 || !roomPointer.current) return;
-          if (placing && onPlace) {
-            const p = candidate(placing, e.point.x, e.point.z);
-            onPlace(p.x, p.z);
-          } else {
-            onSelect(null);
-            if (mode === 'inside') onWalk?.(e.point.x, e.point.z);
-          }
+          if (e.button !== 0 || e.delta > 5 || !roomPointer.current) return;
+          onSelect(null);
+          if (mode === 'inside') onWalk?.(e.point.x, e.point.z);
         }}
       >
         <planeGeometry args={[room.width, room.depth]} />
@@ -639,6 +668,7 @@ export function SceneWorld(props: SceneWorldProps) {
           key={side}
           room={room}
           side={side}
+          placing={!!placing}
           onOpeningSelect={placing ? undefined : onOpeningSelect}
           selectedOpeningId={selectedOpeningId}
           height={
@@ -661,22 +691,29 @@ export function SceneWorld(props: SceneWorldProps) {
       )}
       </group>
       {project.items
-        .filter((i) => i.placed)
+        .filter((i) => i.placed && i.id !== placing?.id)
         .map((item) => {
           const p = preview?.id === item.id ? preview : item;
-          const displayedItem = p.rotation === undefined ? item : { ...item, rotation: p.rotation };
+          const displayedItem = { ...item, ...p };
           return (
             <group
               key={item.id}
+              name={`furniture-${item.id}`}
               position={[p.x, 0, p.z]}
               onPointerDown={(e) => down(item, e)}
               onClick={(e) => {
                 // Clicks have their own hit propagation, separate from pointer-down.
                 // Consume this hit so the floor cannot immediately clear selection.
+                if (placing) return;
                 e.stopPropagation();
-                if (!placing) onSelect(item.id);
+                if (e.button === 0 && e.delta <= 5) onSelect(item.id);
               }}
             >
+              <mesh position={[0, getItemElevation(displayedItem, room.height) + item.height / 2, 0]}
+                rotation={[0, -MathUtils.degToRad(displayedItem.rotation), 0]}>
+                <boxGeometry args={[item.width, item.height, item.depth]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
               <FurnitureModel item={displayedItem} roomHeight={room.height} />
               {selectedId === item.id && (
                 <SelectionOutline
@@ -693,7 +730,7 @@ export function SceneWorld(props: SceneWorldProps) {
                   }
                 />
               )}
-              {selectedId === item.id && !item.locked && !placing && onRotate && (
+              {selectedId === item.id && !item.locked && item.mounting !== 'wall' && !placing && onRotate && (
                 <group rotation={[0, -MathUtils.degToRad(displayedItem.rotation), 0]}>
                   <mesh
                     position={[0, getItemElevation(item, room.height) + 0.07, -item.depth / 2 - 0.25]}
@@ -732,15 +769,15 @@ export function SceneWorld(props: SceneWorldProps) {
             </group>
           );
         })}
-      {placing && (
-        <group position={[hover.x, 0.015, hover.z]}>
-          <FurnitureModel item={placing} roomHeight={room.height} opacity={0.52} />
+      {placing && hover && (
+        <group position={[hover.x, 0, hover.z]}>
+          <FurnitureModel item={{ ...placing, ...hover }} roomHeight={room.height} opacity={0.52} />
           <SelectionOutline
-            item={placing}
+            item={{ ...placing, ...hover }}
             roomHeight={room.height}
             color={
               validatePlacement(
-                { ...placing, x: hover.x, z: hover.z, placed: true },
+                { ...placing, ...hover, placed: true },
                 room,
                 project.items.filter((i) => i.id !== placing.id),
               ).length

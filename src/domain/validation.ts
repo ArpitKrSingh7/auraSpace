@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS } from './catalog';
 import { FURNITURE_TYPES } from './types';
 import type { Detection, FurnitureItem, LayoutSnapshot, Photo, Project, Room, RoomOpening, Settings } from './types';
 import { dimensionSources, roomReconstructionImageIssues, roomReconstructionProposalSchema } from '../../packages/scene-domain/src/schema';
+import { validatePhotoHints } from '../services/photo-hints';
 
 export const MAX_IMPORT_BYTES = 24 * 1024 * 1024;
 const TYPES = FURNITURE_TYPES;
@@ -132,6 +133,7 @@ export function validateItem(input: unknown): FurnitureItem {
     x: number(item.x, 'Furniture X position', -100, 100), z: number(item.z, 'Furniture Z position', -100, 100),
     rotation: normalizeRotation(number(item.rotation, 'Furniture rotation', -360000, 360000)),
     placed: bool(item.placed), locked: bool(item.locked),
+    ...(item.edited !== undefined ? { edited: bool(item.edited) } : {}),
     ...(item.photoId !== undefined ? { photoId: text(item.photoId, 'Photo reference', 128) } : {}),
     ...(item.detectionId !== undefined ? { detectionId: text(item.detectionId, 'Detection reference', 128) } : {}),
   };
@@ -147,8 +149,15 @@ export function validateDetection(input: unknown, imageWidth = 16384, imageHeigh
   const width = number(box[2], 'Box width', 1, imageWidth);
   const height = number(box[3], 'Box height', 1, imageHeight);
   if (x + width > imageWidth + 1 || y + height > imageHeight + 1) throw new ValidationError('A detection extends outside its image.');
+  const maskPolygon = detection.maskPolygon === undefined ? undefined : array(detection.maskPolygon, 'Instance boundary', 1000).map((p): [number, number] => {
+    if (!Array.isArray(p) || p.length !== 2) throw new ValidationError('Invalid instance boundary point.');
+    return [number(p[0], 'Mask X', 0, imageWidth), number(p[1], 'Mask Y', 0, imageHeight)];
+  });
+  if (maskPolygon && maskPolygon.length < 3) throw new ValidationError('An instance boundary needs at least three points.');
   return {
     id: text(detection.id, 'Detection ID', 128), label: text(detection.label, 'Detection label'),
+    ...(detection.analysisIndex !== undefined ? { analysisIndex: number(detection.analysisIndex, 'Analysis index', 0, 999) } : {}),
+    ...(maskPolygon ? { maskPolygon } : {}),
     type: choice(detection.type, TYPES, 'Detected furniture type'), score: number(detection.score, 'Detection score', 0, 1),
     box: [x, y, width, height], source: choice(detection.source, ['model', 'manual'] as const, 'Detection source'),
     ...(detection.color === undefined ? {} : { color: color(detection.color, 'Detected furniture color') }),
@@ -170,7 +179,9 @@ export function validatePhoto(input: unknown): Photo {
   }
   return {
     id: text(photo.id, 'Photo ID', 128), name: text(photo.name, 'Photo name', 180),
+    ...(photo.originalAssetId !== undefined ? { originalAssetId: text(photo.originalAssetId, 'Original photo reference', 128) } : {}),
     uri: imageUri(photo.uri), width, height, detections,
+    ...(photo.analysisHints !== undefined ? { analysisHints: validatePhotoHints(photo.analysisHints, {width, height}) } : {}),
     analysisStatus: choice(photo.analysisStatus, ['idle', 'running', 'complete', 'failed'] as const, 'Analysis status'),
     ...(photo.analysisMessage !== undefined ? { analysisMessage: text(photo.analysisMessage, 'Analysis message', 1000) } : {}),
     ...(photo.processedUri !== undefined ? { processedUri: imageUri(photo.processedUri) } : {}),
@@ -232,6 +243,7 @@ export function parseProjectJson(json: string): Project {
 export function exportProjectJson(project: Project): string {
   const portablePhotos = project.photos.filter((photo) => photo.uri.startsWith('data:image/')).map((photo) => ({
     ...photo,
+    originalAssetId: undefined,
     processedUri: photo.processedUri?.startsWith('data:image/') ? photo.processedUri : undefined,
     analysisStatus: photo.analysisStatus === 'running' ? 'idle' as const : photo.analysisStatus,
   }));
@@ -242,7 +254,7 @@ export function exportProjectJson(project: Project): string {
   return JSON.stringify({
     format: 'auraspace-project', version: 1, exportedAt: new Date().toISOString(),
     omittedMediaCount: project.photos.length - portablePhotos.length,
-    mediaNote: 'Embedded photos travel with this file. Device-local, temporary, and remote-only images are omitted; your layout and furniture remain editable.',
+    mediaNote: 'Embedded normalized photos travel with this file. Original uploads are stored separately on this device: download them from photo review. Temporary and remote-only images are omitted; your layout and furniture remain editable.',
     project: portable,
   }, null, 2);
 }

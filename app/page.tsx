@@ -224,7 +224,9 @@ export default function HomePage() {
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    setMounted(true);
+    let active = true;
+    void useAppStore.getState().loadFromStorage().then(() => { if (active) setMounted(true); });
+    return () => { active = false; };
   }, []);
   useEffect(() => {
     document.documentElement.dataset.reduceMotion = String(

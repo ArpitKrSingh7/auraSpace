@@ -42,13 +42,24 @@ class FurnitureLayoutTests(unittest.TestCase):
     def test_projected_furniture_extends_a_visible_floor_crop_without_inventing_walls(self):
         proposal = {**self.proposal, 'widthM': .5, 'depthM': .5,
                     'floorPolygonXZ': [[0, 0], [.5, 0], [.5, .5], [0, .5]],
-                    'boundaryEdges': ['observed-wall'] * 4}
+                    'boundaryEdges': ['view-limit'] * 4}
         result = populate_room_proposal(proposal, [self.detection], self.depth)
         self.assertGreater(max(result['widthM'], result['depthM']), .5)
         self.assertEqual(result['floorCornersPx'], [])
         self.assertIn('view-limit', result['boundaryEdges'])
         self.assertTrue(any('footprints' in warning for warning in result['warnings']))
         self.assertEqual(len(result['imageToFloor']), 9)
+
+    def test_furniture_cannot_expand_supported_walls_to_hide_a_conflict(self):
+        proposal = {**self.proposal, 'widthM': .5, 'depthM': .5,
+                    'floorPolygonXZ': [[0, 0], [.5, 0], [.5, .5], [0, .5]],
+                    'boundaryEdges': ['observed-wall'] * 4}
+        result = populate_room_proposal(proposal, [self.detection], self.depth)
+        self.assertEqual((result['widthM'], result['depthM']), (.5, .5))
+        self.assertEqual(result['boundaryEdges'], ['observed-wall'] * 4)
+        self.assertEqual(result['imageToFloor'], proposal['imageToFloor'])
+        self.assertEqual(len(result['furniture']), 1)
+        self.assertGreater(max(result['furniture'][0]['centerXZ']), .5)
 
     def test_missing_depth_or_mask_does_not_invent_a_furniture_pose(self):
         self.assertIs(populate_room_proposal(self.proposal, [self.detection], None), self.proposal)

@@ -1,4 +1,5 @@
-import type { Dimension, RoomReconstructionProposal } from '../schema';
+import type { Dimension, RoomReconstructionProposal, roomPhotoHintsSchema } from '../schema';
+import type { z } from 'zod';
 
 export const FURNITURE_TYPES = [
   'sofa', 'chair', 'bed', 'table', 'cabinet', 'plant', 'rug', 'custom',
@@ -57,9 +58,15 @@ export interface FurnitureItem {
   locked: boolean;
   photoId?: string;
   detectionId?: string;
+  /** User edits survive rebuilding suggestions, independently of locking. */
+  edited?: boolean;
 }
 export interface Detection {
   id: string;
+  /** Index in the current inference result; identity is independent of ordering. */
+  analysisIndex?: number;
+  /** Simplified instance boundary, in oriented source-image coordinates. */
+  maskPolygon?: [number, number][];
   label: string;
   type: FurnitureType;
   score: number;
@@ -69,6 +76,9 @@ export interface Detection {
 }
 export interface Photo {
   id: string;
+  analysisHints?: z.infer<typeof roomPhotoHintsSchema>;
+  /** Device-local original bytes; preview pixels define all CV coordinates. */
+  originalAssetId?: string;
   uri: string;
   width: number;
   height: number;
@@ -126,9 +136,9 @@ export interface SceneProps {
   onSelect: (id: string | null) => void;
   onOpeningSelect?: (id: string) => void;
   selectedOpeningId?: string | null;
-  onMove: (id: string, x: number, z: number) => void;
+  onMove: (id: string, x: number, z: number, adjustment?: Pick<FurnitureItem, 'rotation' | 'elevationM'>) => void;
   onRotate?: (id: string, rotationDeg: number) => void;
-  onPlace?: (x: number, z: number) => void;
+  onPlace?: (x: number, z: number, adjustment?: Pick<FurnitureItem, 'rotation' | 'elevationM'>) => void;
   placing?: FurnitureItem | null;
   captureRef?: { current: (() => Promise<string>) | null };
 }

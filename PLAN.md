@@ -66,12 +66,11 @@ furniture, fit a plausible floor using bounded RANSAC, fit supported vertical
 walls, align a rectangular Manhattan-room draft and derive its floor
 homography. Mark observed wall edges separately from visibility limits.
 
-A two-point measured floor reference calibrates scale in the shared domain
-operation; the active furnished-draft screen does **not** expose that operation
-yet. Its width/length inputs currently fit the visible extent to the requested
-room size, which can distort item sizes when boundaries are hidden. Wire floor
-reference calibration into that flow and separate room editing from object
-scale before treating this as calibrated reconstruction. Existing measurements
+The active furnished-draft screen supports a two-point measured floor reference.
+The reference is validated against the proposed floor, saved with the proposal,
+and applies one uniform scale to furniture. Width/length inputs edit room
+boundaries independently; they no longer stretch furniture or infer a scale for
+another room axis. Existing measurements
 win unless replacement is explicitly requested. One known length does not
 recover hidden boundaries or correct every lens/shape error. The current
 fitter omits height and automatic opening proposals when unsupported.
@@ -107,18 +106,21 @@ existing vision evaluation scripts/reports.
 
 The editor, expanded household library, browser grayscale/contrast/Sobel tools,
 learned-model adapters, partial room fitter and deployment configuration are
-implemented. Floor-reference calibration and reviewed masks have shared/backend
-implementations but are not connected to the active furnished-draft screen.
-CLAHE, contours and histograms have Python endpoints but no active web controls.
+implemented. Floor-reference calibration is connected to the furnished-draft
+screen. CLAHE, contours and RGB histograms are available in the Analysis lab.
+Removal supports selected instance contours, paint/erase review and preservation
+of unselected pixels. Rescans conservatively match observations independently
+of model ordering; user-edited furniture survives rebuilds. Projects migrate to
+IndexedDB, with original uploads stored separately from normalized CV previews.
 Door/window controls are accessible from the scene and toolbar; geometry
 settings remain available in Room settings. Real-room accuracy is unmeasured.
 
 Next priorities:
 
-1. Complete the missing review workflow before expanding model scope: floor
-   reference calibration, dimension provenance, visible/unknown boundary
-   review, label correction and selected removal masks. Separate measured room
-   boundaries from the visible floor extent. Add the missing image-tool controls.
+1. Extend structural review to direct wall/corner editing, irregular room shells
+   and per-axis furniture evidence. Floor evidence, boundary labels, rejection,
+   guided floor-region refitting and explicit camera calibration are reachable.
+   Add distortion/crop calibration and persistent removal-mask edit history.
 2. Extend the successful deployed detector/depth/removal synthetic smoke checks
    to real captures, cold starts, memory, errors and retries. Exercise
    interactions on desktop and phone web.
