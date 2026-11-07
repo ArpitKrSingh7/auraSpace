@@ -397,10 +397,10 @@ export function SelectionOutline({
   useEffect(() => () => geometry.dispose(), [geometry]);
   return (
     <group position={[0, getItemElevation(item, roomHeight), 0]} rotation={[0, -MathUtils.degToRad(item.rotation), 0]}>
-      <lineSegments geometry={geometry}>
+      <lineSegments geometry={geometry} raycast={() => null}>
         <lineBasicMaterial color={color} depthTest={false} />
       </lineSegments>
-      <mesh position={[0, 0.026, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 0.026, 0]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
         <planeGeometry args={[item.width + 0.07, item.depth + 0.07]} />
         <meshBasicMaterial
           color={color}
@@ -413,6 +413,7 @@ export function SelectionOutline({
         [-1, 1].map((z) => (
           <mesh
             key={`${x},${z}`}
+            raycast={() => null}
             position={[
               x * (item.width / 2 + 0.035),
               0.045,
@@ -640,7 +641,7 @@ export function SceneWorld(props: SceneWorldProps) {
         onClick={(event) => {
           if (placing) return;
           event.stopPropagation();
-          if (event.button === 0 && event.delta <= 5 && roomPointer.current && !placing) onSelect(null);
+          if (event.button === 0 && event.delta <= 5 && roomPointer.current) onSelect(null);
         }}>
       <Solid
         at={[room.width / 2, -0.105, room.depth / 2]}

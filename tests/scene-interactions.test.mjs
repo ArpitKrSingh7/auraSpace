@@ -82,6 +82,34 @@ test('a furniture tap stays selected; wall and empty floor taps clear selection'
   } finally { await view.close(); }
 });
 
+test('clicking the visible floor border clears selection too', async () => {
+  const view = await viewport();
+  try {
+    await view.tap(2.5, .75);
+    assert.equal(view.selected, 'sample-living-sofa');
+    // This hits the decorative floor base beyond the floor plane, not a wall.
+    await view.tap(-.05, 2);
+    assert.equal(view.selected, null);
+  } finally { await view.close(); }
+});
+
+test('selected outline graphics do not intercept nearby floor clicks', async () => {
+  const project = structuredClone(createSampleProjects().find((p) => p.id === 'sample-living'));
+  project.room = { ...project.room, width: 5, depth: 4 };
+  project.items = [makeItem('sofa', {
+    id: 'outline-hit-sofa', placed: true, x: 2.5, z: 2,
+    width: 2.1, depth: .9, height: .85,
+  })];
+  const view = await viewport({ project });
+  try {
+    await view.tap(2.5, 2);
+    assert.equal(view.selected, 'outline-hit-sofa');
+    // The line raycaster's default 1 m threshold used to swallow this floor tap.
+    await view.tap(.8, 2.8);
+    assert.equal(view.selected, null);
+  } finally { await view.close(); }
+});
+
 test('inside-view floor clicks deselect furniture and retain tap-to-walk', async () => {
   const view = await viewport({ mode: 'inside' });
   try {
